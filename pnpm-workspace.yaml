@@ -1,0 +1,45 @@
+packages:
+  - 'packages/*'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Supply-chain hardening — explicit even when these match pnpm 11 defaults.
+# Defaults can change between minor versions; codifying them here means a
+# future bump cannot silently weaken our posture without a diff in this file.
+# Reference: ~/.agentkb/alavida/wiki/javascript-supply-chain-security.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Per-package allowlist for preinstall/install/postinstall scripts.
+# Every package that wants to run a script is enumerated with a deliberate
+# decision. New transitive deps that try to run scripts will be blocked by
+# default and pnpm will surface them on the next install.
+#
+# Why each:
+#   esbuild           — downloads platform binary; vitest depends on it.
+#   @google/genai     — Google Gemini SDK pulled in transitively via openclaw.
+#                       Types only; no runtime Gemini call.
+#   koffi             — FFI (native C bindings) pulled in via openclaw.
+#   openclaw          — peer dep we type-check against; runtime is the gateway.
+#   protobufjs        — pulled in transitively; not invoked at runtime.
+#   tree-sitter-bash  — native bindings; pulled in transitively; not invoked.
+#   sharp             — image processing native binary; pulled in transitively
+#                       via openclaw; not invoked locally.
+allowBuilds:
+  esbuild: true
+  '@google/genai': false
+  koffi: false
+  openclaw: false
+  protobufjs: false
+  tree-sitter-bash: false
+  sharp: false
+
+# Refuse package versions younger than 24 hours. Buys time for the community
+# to detect and yank malicious releases (e.g. the TanStack incident, Sept 2025).
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude: []
+
+# Disallow transitive dependencies pulled from git URLs or arbitrary tarballs.
+blockExoticSubdeps: true
+
+# Verify node_modules matches lockfile before scripts. `warn` for composite
+# refs; CI uses --frozen-lockfile as the hard check.
+verifyDepsBeforeRun: warn

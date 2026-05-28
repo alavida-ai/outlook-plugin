@@ -1,24 +1,16 @@
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
+node_modules/
 dist/
-build/
-.pytest_cache/
-.ruff_cache/
-
-# secrets & local state
+*.tsbuildinfo
+.DS_Store
+coverage/
 .env
 .env.local
+.vitest-cache/
+
+# secrets & local state
 tokens.json
 .outlook-cli/
-
-# local-only planning docs (kept on disk for dev, never pushed)
-SUMMARY.md
-PLAN.md
 
 # editors
 .vscode/
 .idea/
-.DS_Store
