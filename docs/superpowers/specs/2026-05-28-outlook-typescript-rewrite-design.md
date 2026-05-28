@@ -43,10 +43,16 @@ outlook-cli/                                    # repo (unchanged GitHub URL)
 ├── .github/workflows/publish-openclaw.yml      # path-tag GH Packages publish
 ├── docs/superpowers/specs/                     # design docs (this file)
 └── packages/
-    ├── core/        @alavida-ai/outlook-core        — Graph wrapper + MSAL
-    ├── cli/         @alavida-ai/outlook-cli         — `outlook` binary
-    └── openclaw/    @alavida-ai/outlook-openclaw    — OpenClaw plugin
+    ├── core/        @alavida-ai/outlook-core              — Graph wrapper + MSAL
+    ├── cli/         @alavida-ai/outlook-cli               — `outlook` binary
+    └── openclaw/    @alavida-ai/outlook-plugin-openclaw   — OpenClaw plugin
 ```
+
+**This shape is validated against the granola-plugin Python→TS migration**
+(repo `alavida-ai/granola-plugin`, completed May 2026). Every structural
+choice below — package names, `pnpm-workspace.yaml` block, `check-pnpm.mjs`
+flavour, lazy-import CLI router, openclaw manifest shape — has a working
+precedent in that repo and we copy from it rather than re-deriving.
 
 **Why 3 packages, not 4 (no sgil-equivalent business-policy layer).**
 SGIL's `@alavida-ai/attio-sgil` exists because SGIL has client-specific Attio
@@ -60,9 +66,9 @@ API) is precedent for the 3-package shape.
 
 | Package | Owns | Public surface |
 |---|---|---|
-| **`core`** | MSAL device-code flow; token cache at `~/.outlook-cli/tokens.json` (0600); authenticated `graphFetch()`; typed message/event/folder/contact shapes; error mapping (`401 → AuthError`, `404 → NotFoundError`, `429/503 → throttled`). Pure library — no stdout/stderr, no process.exit. | `OutlookClient` with `.mail`, `.calendar`, `.contacts`, `.me`. Free functions: `loginDeviceCode()`, `logout()`, `status()`, `getAccessToken()`. |
-| **`cli`** | Argument parsing (commander v12); pretty/json renderers; stderr/stdout discipline (data → stdout, status/errors → stderr); `--select` field projection; escape-decoding (`\n`, `\r`, `\t`, `\\` in `--body`/`--comment`); the `outlook` bin. | The `outlook` binary plus its `--help` text. No exports for downstream consumers. |
-| **`openclaw`** | One `ToolDescriptor` per file in `src/tools/<tool-name>.ts`; central `registerTool` injects shared `output`/`help` params and wraps in `withErrorMapping`; pretty renderers per tool. Depends on `@alavida-ai/outlook-core` via `workspace:*`. | `default export = definePluginEntry({...})`. |
+| **`core`** (`@alavida-ai/outlook-core`) | MSAL device-code flow; token cache at `~/.outlook-cli/tokens.json` (0600); authenticated `graphFetch()`; typed message/event/folder/contact shapes; error mapping (`401 → AuthError`, `404 → NotFoundError`, `429/503 → throttled`). Pure library — no stdout/stderr, no `process.exit`. | `OutlookClient` with `.mail`, `.calendar`, `.contacts`, `.me`. Free functions: `loginDeviceCode()`, `logout()`, `status()`, `getAccessToken()`. |
+| **`cli`** (`@alavida-ai/outlook-cli`) | Node's native `util.parseArgs` (no CLI-framework dep); `src/commands/<noun>-<verb>.ts` per command with `export function run(argv: string[]): Promise<number>`; lazy `await import('./commands/...')` from `src/index.ts`; `src/output.ts` for `printJson` / `eprintln` / `formatError`; stderr/stdout discipline (data → stdout, status/errors → stderr); `--json` flag; `--select` field projection; escape-decoding (`\n`, `\r`, `\t`, `\\` in `--body`/`--comment`). | The `outlook` binary plus per-command `--help`. No exports for downstream consumers. |
+| **`openclaw`** (`@alavida-ai/outlook-plugin-openclaw`) | One `ToolDescriptor` per file in `src/tools/<tool-name>.ts`; central `registerTool` injects shared `output: 'pretty' \| 'json'` and `help: boolean` params and wraps in `withErrorMapping`; pretty renderers per tool. Depends on `@alavida-ai/outlook-core` via `workspace:*`. Package name follows the granola precedent (`@alavida-ai/<product>-plugin-openclaw`). | `default export = definePluginEntry({...})`. |
 
 The OpenClaw plugin never shells out. The CLI and the plugin are two thin UIs
 over the same `core`.
@@ -123,7 +129,7 @@ params via the `registerTool` helper copied from sgil-crm.
 | MSAL | `@azure/msal-node` v3 | Official Microsoft device-code + token cache for Node. |
 | Graph HTTP | Node 20 `fetch` + thin typed wrapper | Skips `@microsoft/microsoft-graph-client` — that lib brings its own auth-provider abstraction, large transitive surface, and types we don't need. Concise > comprehensive. |
 | Validation | typebox | Same as sgil-crm `openclaw` package. |
-| CLI framework | commander v12 | Smaller surface than yargs; well-used in the Azure CLI ecosystem. |
+| CLI framework | Node's `util.parseArgs` (no dep) | Granola-plugin precedent. Zero supply-chain surface; lazy command imports keep startup snappy. The CLI's command surface is shallow enough that we don't need yargs/commander/clipanion. |
 | Tests | vitest | Same as sgil-crm. |
 | Lint/format | eslint 9 + prettier | Same as sgil-crm. |
 | Release | Changesets → path-tag-triggered GH Actions → GitHub Packages `@alavida-ai/*` | Per [openclaw-plugin-distribution.md](../../../.agentkb/alavida/wiki/openclaw-plugin-distribution.md). |
