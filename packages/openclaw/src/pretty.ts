@@ -96,6 +96,69 @@ interface TriageResultShape {
   importance?: 'low' | 'normal' | 'high';
 }
 
+interface AttendeeShape {
+  address: string | null;
+  name: string | null;
+  type: string | null;
+  response: string | null;
+}
+
+interface EventSummaryShape {
+  id: string | null;
+  subject: string | null;
+  start: string | null;
+  end: string | null;
+  timeZone: string | null;
+  location: string | null;
+  organizer: string | null;
+  attendees: AttendeeShape[];
+  isOnlineMeeting: boolean | null;
+  onlineJoinUrl: string | null;
+  isAllDay: boolean | null;
+  isCancelled: boolean | null;
+  webLink: string | null;
+}
+
+interface EventDetailShape extends EventSummaryShape {
+  bodyContentType: string | null;
+  body: string | null;
+  bodyPreview: string | null;
+}
+
+interface EventListShape {
+  events: EventSummaryShape[];
+  count: number;
+  nextLink: string | null;
+}
+
+interface AvailabilityScheduleShape {
+  scheduleId: string | null;
+  availabilityView: string | null;
+  scheduleItems: Array<{
+    subject: string | null;
+    start: string | null;
+    end: string | null;
+    status: string | null;
+    location: string | null;
+  }>;
+  workingHours: unknown;
+}
+
+interface AvailabilityResultShape {
+  emails: string[];
+  startTime: string;
+  endTime: string;
+  timeZone: string;
+  interval: number;
+  schedules: AvailabilityScheduleShape[];
+}
+
+interface CalendarResponseShape {
+  id: string;
+  response: 'accept' | 'decline' | 'tentative';
+  sentResponse: boolean;
+}
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -151,6 +214,50 @@ function isAddAttachmentSummary(p: unknown): p is AddAttachmentSummaryShape {
   );
 }
 
+function isEventList(p: unknown): p is EventListShape {
+  return isObject(p) && Array.isArray((p as { events?: unknown }).events);
+}
+
+function isEventDetail(p: unknown): p is EventDetailShape {
+  if (!isObject(p)) return false;
+  return (
+    'attendees' in p &&
+    Array.isArray((p as { attendees: unknown }).attendees) &&
+    'subject' in p &&
+    'start' in p &&
+    'body' in p
+  );
+}
+
+function isEventSummary(p: unknown): p is EventSummaryShape {
+  if (!isObject(p)) return false;
+  return (
+    'attendees' in p &&
+    Array.isArray((p as { attendees: unknown }).attendees) &&
+    'start' in p &&
+    'end' in p &&
+    'organizer' in p
+  );
+}
+
+function isAvailabilityResult(p: unknown): p is AvailabilityResultShape {
+  if (!isObject(p)) return false;
+  return (
+    Array.isArray((p as { schedules?: unknown }).schedules) &&
+    Array.isArray((p as { emails?: unknown }).emails) &&
+    typeof (p as { interval?: unknown }).interval === 'number'
+  );
+}
+
+function isCalendarResponse(p: unknown): p is CalendarResponseShape {
+  if (!isObject(p)) return false;
+  return (
+    typeof (p as { id?: unknown }).id === 'string' &&
+    typeof (p as { sentResponse?: unknown }).sentResponse === 'boolean' &&
+    'response' in p
+  );
+}
+
 function isTriageResult(p: unknown): p is TriageResultShape {
   if (!isObject(p)) return false;
   if (typeof (p as { id?: unknown }).id !== 'string') return false;
@@ -174,6 +281,11 @@ export function renderPretty(payload: unknown): string {
   if (isDownloadResult(payload)) return renderDownloadResult(payload);
   if (isAddAttachmentSummary(payload)) return renderAddAttachmentSummary(payload);
   if (isDraftSummary(payload)) return renderDraftSummary(payload);
+  if (isEventList(payload)) return renderEventList(payload);
+  if (isEventDetail(payload)) return renderEventDetail(payload);
+  if (isEventSummary(payload)) return renderEventDetail(payload as EventDetailShape);
+  if (isAvailabilityResult(payload)) return renderAvailability(payload);
+  if (isCalendarResponse(payload)) return renderCalendarResponse(payload);
   if (isTriageResult(payload)) return renderTriageResult(payload);
 
   // Generic fallback — JSON.stringify (truncated for readability).
@@ -324,4 +436,88 @@ function renderAddAttachmentSummary(p: AddAttachmentSummaryShape): string {
   if (p.contentType) lines.push(`  contentType: ${p.contentType}`);
   if (p.isInline) lines.push(`  inline: true`);
   return lines.join('\n');
+}
+
+function renderEventList(p: EventListShape): string {
+  const lines: string[] = [`Events (${p.count})`];
+  if (p.count === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const e of p.events) {
+      const start = shortDate(e.start);
+      const subject = e.subject ?? '(no subject)';
+      const organizer = e.organizer ? ` (${e.organizer})` : '';
+      const location = e.location ? ` [${e.location}]` : '';
+      lines.push(`  ${start}  ${subject}${organizer}${location}`);
+      if (e.id) lines.push(`    id: ${e.id}`);
+    }
+  }
+  if (p.nextLink) lines.push(`  (more results — nextLink: ${p.nextLink})`);
+  return lines.join('\n');
+}
+
+function renderEventDetail(e: EventDetailShape): string {
+  const lines: string[] = [];
+  lines.push(`Subject: ${e.subject ?? '(no subject)'}`);
+  if (e.start) {
+    const tz = e.timeZone ? ` (${e.timeZone})` : '';
+    lines.push(`Start:   ${e.start}${tz}`);
+  }
+  if (e.end) lines.push(`End:     ${e.end}`);
+  if (e.location) lines.push(`Where:   ${e.location}`);
+  if (e.organizer) lines.push(`Organizer: ${e.organizer}`);
+  if (e.attendees.length > 0) {
+    lines.push('Attendees:');
+    for (const a of e.attendees) {
+      const resp = a.response ? ` (${a.response})` : '';
+      lines.push(`  - ${a.address ?? '(no address)'}${resp}`);
+    }
+  }
+  if (e.onlineJoinUrl) lines.push(`Join:    ${e.onlineJoinUrl}`);
+  const body = e.body ?? '';
+  if (body.length > 0) {
+    lines.push('');
+    if (body.length > 2000) {
+      lines.push(body.slice(0, 2000));
+      lines.push('…(body truncated; use output: json for full text)');
+    } else {
+      lines.push(body);
+    }
+  }
+  if (e.webLink) {
+    lines.push('');
+    lines.push(`Open in Outlook: ${e.webLink}`);
+  }
+  return lines.join('\n');
+}
+
+function renderAvailability(r: AvailabilityResultShape): string {
+  const lines: string[] = [];
+  lines.push(`Availability  ${r.startTime} -> ${r.endTime}  ${r.timeZone}  (${r.interval}min blocks)`);
+  lines.push('Legend: 0=free, 1=tentative, 2=busy, 3=out-of-office, 4=working-elsewhere');
+  if (r.schedules.length === 0) {
+    lines.push('  (no schedules returned)');
+    return lines.join('\n');
+  }
+  for (const s of r.schedules) {
+    lines.push(`  ${s.scheduleId ?? '(unknown)'}  ${s.availabilityView ?? ''}`);
+    for (const item of s.scheduleItems) {
+      const span =
+        item.start && item.end
+          ? `${shortDate(item.start)} -> ${shortDate(item.end)}`
+          : '';
+      const subject = item.subject ?? '';
+      const status = item.status ? ` [${item.status}]` : '';
+      const loc = item.location ? ` @ ${item.location}` : '';
+      if (span || subject) {
+        lines.push(`      ${span}  ${subject}${status}${loc}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderCalendarResponse(p: CalendarResponseShape): string {
+  const sent = p.sentResponse ? '' : ' (no notification sent)';
+  return `Responded ${p.response} to event ${p.id}${sent}.`;
 }

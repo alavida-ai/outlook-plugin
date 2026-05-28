@@ -65,6 +65,28 @@ export type {
   AddAttachmentSummary,
 } from './resources/mail.js';
 export {
+  CalendarResource,
+  RECURRENCE_PRESETS,
+  ATTENDEE_RESPONSES,
+  AVAILABILITY_LEGEND,
+  normaliseIso,
+  flattenEvent,
+} from './resources/calendar.js';
+export type {
+  EventSummary,
+  EventDetail,
+  AttendeeSummary,
+  RecurrencePreset,
+  AttendeeResponse,
+  ListEventsOptions,
+  CreateEventInput,
+  UpdateEventInput,
+  RespondInput,
+  AvailabilityInput,
+  AvailabilityResult,
+  AvailabilityScheduleSummary,
+} from './resources/calendar.js';
+export {
   CoreError,
   NotFoundError,
   ThrottledError,

@@ -20,7 +20,14 @@
       "mail_delete",
       "mail_mark",
       "mail_flag",
-      "mail_importance"
+      "mail_importance",
+      "calendar_list",
+      "calendar_show",
+      "calendar_create",
+      "calendar_update",
+      "calendar_delete",
+      "calendar_respond",
+      "calendar_availability"
     ]
   },
   "activation": { "onStartup": true },

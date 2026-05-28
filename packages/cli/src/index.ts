@@ -31,6 +31,13 @@ Commands:
   mail mark                  Mark a message read or unread.
   mail flag                  Set the follow-up flag.
   mail importance            Set the importance level.
+  calendar list              List events in a date range (calendarView).
+  calendar show              Show one event in full.
+  calendar create            Create an event.
+  calendar update            Update an event (PATCH).
+  calendar delete            Cancel an event (notifies attendees).
+  calendar respond           Accept/decline/tentatively-accept an invite.
+  calendar availability      Free/busy across one or more users.
 
 Global flags:
   --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
@@ -136,6 +143,39 @@ async function main(argv: string[]): Promise<number> {
       return run(rest);
     }
     eprintln(`Unknown mail subcommand: ${second ?? '(none)'}.`);
+    return 1;
+  }
+
+  if (first === 'calendar') {
+    if (second === 'list') {
+      const { run } = await import('./commands/calendar-list.js');
+      return run(rest);
+    }
+    if (second === 'show') {
+      const { run } = await import('./commands/calendar-show.js');
+      return run(rest);
+    }
+    if (second === 'create') {
+      const { run } = await import('./commands/calendar-create.js');
+      return run(rest);
+    }
+    if (second === 'update') {
+      const { run } = await import('./commands/calendar-update.js');
+      return run(rest);
+    }
+    if (second === 'delete') {
+      const { run } = await import('./commands/calendar-delete.js');
+      return run(rest);
+    }
+    if (second === 'respond') {
+      const { run } = await import('./commands/calendar-respond.js');
+      return run(rest);
+    }
+    if (second === 'availability') {
+      const { run } = await import('./commands/calendar-availability.js');
+      return run(rest);
+    }
+    eprintln(`Unknown calendar subcommand: ${second ?? '(none)'}.`);
     return 1;
   }
 

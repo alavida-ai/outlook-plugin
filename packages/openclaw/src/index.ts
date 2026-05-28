@@ -35,6 +35,13 @@ import mailDelete from './tools/mail-delete.js';
 import mailMark from './tools/mail-mark.js';
 import mailFlag from './tools/mail-flag.js';
 import mailImportance from './tools/mail-importance.js';
+import calendarList from './tools/calendar-list.js';
+import calendarShow from './tools/calendar-show.js';
+import calendarCreate from './tools/calendar-create.js';
+import calendarUpdate from './tools/calendar-update.js';
+import calendarDelete from './tools/calendar-delete.js';
+import calendarRespond from './tools/calendar-respond.js';
+import calendarAvailability from './tools/calendar-availability.js';
 
 const TOOLS: ToolDescriptor[] = [
   whoami,
@@ -53,6 +60,13 @@ const TOOLS: ToolDescriptor[] = [
   mailMark,
   mailFlag,
   mailImportance,
+  calendarList,
+  calendarShow,
+  calendarCreate,
+  calendarUpdate,
+  calendarDelete,
+  calendarRespond,
+  calendarAvailability,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
