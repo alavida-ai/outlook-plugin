@@ -63,6 +63,25 @@ interface DownloadResultShape {
   size: number;
 }
 
+interface DraftSummaryShape {
+  id: string;
+  subject: string | null;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  webLink: string | null;
+  composeLink: string | null;
+}
+
+interface AddAttachmentSummaryShape {
+  attachmentId: string | null;
+  name: string | null;
+  contentType: string | null;
+  size: number | null;
+  isInline: boolean;
+  draftId?: string;
+}
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -98,6 +117,26 @@ function isDownloadResult(p: unknown): p is DownloadResultShape {
   );
 }
 
+function isDraftSummary(p: unknown): p is DraftSummaryShape {
+  if (!isObject(p)) return false;
+  return (
+    typeof (p as { id?: unknown }).id === 'string' &&
+    'composeLink' in p &&
+    'webLink' in p &&
+    Array.isArray((p as { to?: unknown }).to)
+  );
+}
+
+function isAddAttachmentSummary(p: unknown): p is AddAttachmentSummaryShape {
+  if (!isObject(p)) return false;
+  return (
+    'attachmentId' in p &&
+    'isInline' in p &&
+    'size' in p &&
+    !('path' in p)
+  );
+}
+
 /** Render an arbitrary tool payload as compact text. */
 export function renderPretty(payload: unknown): string {
   if (payload === undefined || payload === null) return '(no result)';
@@ -107,6 +146,8 @@ export function renderPretty(payload: unknown): string {
   if (isFolderList(payload)) return renderFolderList(payload);
   if (isAttachmentList(payload)) return renderAttachmentList(payload);
   if (isDownloadResult(payload)) return renderDownloadResult(payload);
+  if (isAddAttachmentSummary(payload)) return renderAddAttachmentSummary(payload);
+  if (isDraftSummary(payload)) return renderDraftSummary(payload);
 
   // Generic fallback — JSON.stringify (truncated for readability).
   try {
@@ -208,4 +249,31 @@ function renderAttachmentList(p: AttachmentListShape): string {
 
 function renderDownloadResult(p: DownloadResultShape): string {
   return `Wrote ${p.name} (${p.size} bytes) to ${p.path}`;
+}
+
+function renderDraftSummary(p: DraftSummaryShape): string {
+  const lines: string[] = [];
+  const subjectLabel = p.subject ?? '(no subject)';
+  lines.push(`Draft "${subjectLabel}" created.`);
+  lines.push(`  id: ${p.id}`);
+  if (p.to.length > 0) lines.push(`  to: ${p.to.join(', ')}`);
+  if (p.cc.length > 0) lines.push(`  cc: ${p.cc.join(', ')}`);
+  if (p.bcc.length > 0) lines.push(`  bcc: ${p.bcc.join(', ')}`);
+  if (p.composeLink) {
+    lines.push(`  edit in Outlook: ${p.composeLink}`);
+  } else if (p.webLink) {
+    lines.push(`  open in Outlook: ${p.webLink}`);
+  }
+  return lines.join('\n');
+}
+
+function renderAddAttachmentSummary(p: AddAttachmentSummaryShape): string {
+  const size = p.size ?? 0;
+  const name = p.name ?? '(unnamed)';
+  const draftPart = p.draftId ? ` to draft ${p.draftId}` : '';
+  const lines = [`Attached ${name} (${size} bytes)${draftPart}.`];
+  if (p.attachmentId) lines.push(`  attachmentId: ${p.attachmentId}`);
+  if (p.contentType) lines.push(`  contentType: ${p.contentType}`);
+  if (p.isInline) lines.push(`  inline: true`);
+  return lines.join('\n');
 }

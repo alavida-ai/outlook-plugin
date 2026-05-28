@@ -42,6 +42,8 @@ export type { MeProfile } from './resources/me.js';
 export {
   MailResource,
   WELL_KNOWN_FOLDERS,
+  INLINE_ATTACHMENT_MAX_BYTES,
+  composeLinkFromWebLink,
   normaliseDateForFilter,
   sanitiseAttachmentName,
 } from './resources/mail.js';
@@ -55,6 +57,12 @@ export type {
   SearchMessagesOptions,
   ReadMessageOptions,
   DownloadAttachmentResult,
+  DraftInput,
+  ReplyInput,
+  ForwardInput,
+  AddAttachmentInput,
+  DraftSummary,
+  AddAttachmentSummary,
 } from './resources/mail.js';
 export {
   CoreError,

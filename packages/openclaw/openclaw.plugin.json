@@ -11,7 +11,11 @@
       "mail_search",
       "mail_folders",
       "mail_list_attachments",
-      "mail_download_attachment"
+      "mail_download_attachment",
+      "mail_draft",
+      "mail_reply",
+      "mail_forward",
+      "mail_add_attachment"
     ]
   },
   "activation": { "onStartup": true },

@@ -91,6 +91,69 @@ export interface DownloadAttachmentResult {
   size: number;
 }
 
+/** Input for `MailResource.draft`. */
+export interface DraftInput {
+  subject: string;
+  body: string;
+  /** When true, body is sent as HTML; otherwise plain text. */
+  html?: boolean;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+}
+
+/** Input for `MailResource.reply`. */
+export interface ReplyInput {
+  body: string;
+  html?: boolean;
+  /** Reply to all recipients on the thread instead of just the sender. */
+  replyAll?: boolean;
+}
+
+/** Input for `MailResource.forward`. */
+export interface ForwardInput {
+  to: string[];
+  cc?: string[];
+  /** Optional leading note prepended above the quoted original. */
+  comment?: string;
+}
+
+/** Input for `MailResource.addAttachment`. */
+export interface AddAttachmentInput {
+  /** File name as it should appear on the attachment. */
+  name: string;
+  /** MIME type (`application/pdf`, `image/png`, ...). */
+  contentType: string;
+  /** Raw bytes; will be base64-encoded for Graph. */
+  contentBytes: Buffer;
+  /** Display inline in the body instead of as a download. */
+  isInline?: boolean;
+}
+
+/** Returned by `draft` / `reply` / `forward`. */
+export interface DraftSummary {
+  id: string;
+  subject: string | null;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  webLink: string | null;
+  /** outlook.cloud.microsoft compose URL — opens the draft in edit mode. */
+  composeLink: string | null;
+}
+
+/** Returned by `addAttachment`. */
+export interface AddAttachmentSummary {
+  attachmentId: string | null;
+  name: string | null;
+  contentType: string | null;
+  size: number | null;
+  isInline: boolean;
+}
+
+/** Inline-attachment cap per Graph docs. Anything larger needs an upload session. */
+export const INLINE_ATTACHMENT_MAX_BYTES = 3 * 1024 * 1024;
+
 const MESSAGE_SELECT_FIELDS = [
   'id',
   'subject',
@@ -149,6 +212,65 @@ export function sanitiseAttachmentName(name: string | null | undefined): string 
 interface RawPageResponse<T> {
   value?: T[];
   '@odata.nextLink'?: string;
+}
+
+/** Wrap an address into Graph's nested Recipient shape. */
+function toRecipient(address: string): { emailAddress: { address: string } } {
+  return { emailAddress: { address } };
+}
+
+function toRecipients(
+  addresses: readonly string[] | undefined,
+): Array<{ emailAddress: { address: string } }> {
+  if (!addresses || addresses.length === 0) return [];
+  return addresses.map(toRecipient);
+}
+
+function recipientAddresses(
+  list: Array<{ emailAddress?: { address?: string | null } | null }> | null | undefined,
+): string[] {
+  if (!list) return [];
+  const out: string[] = [];
+  for (const r of list) {
+    const a = r.emailAddress?.address;
+    if (a) out.push(a);
+  }
+  return out;
+}
+
+/**
+ * Build the `outlook.cloud.microsoft/mail/compose/<itemId>` URL by extracting
+ * the `ItemID` query param from Graph's `webLink`. Graph's webLink itself
+ * opens the message in read mode; the compose route opens it in edit mode.
+ *
+ * Returns `null` if the webLink is missing or doesn't carry an ItemID.
+ */
+export function composeLinkFromWebLink(webLink: string | null | undefined): string | null {
+  if (!webLink) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(webLink);
+  } catch {
+    return null;
+  }
+  const itemId = parsed.searchParams.get('ItemID');
+  if (!itemId) return null;
+  return `https://outlook.cloud.microsoft/mail/compose/${encodeURIComponent(itemId)}`;
+}
+
+function draftSummaryFrom(msg: Message | null | undefined): DraftSummary {
+  if (!msg || !msg.id) {
+    throw new Error('Graph returned a draft response without an id.');
+  }
+  return {
+    id: msg.id,
+    subject: msg.subject ?? null,
+    to: recipientAddresses(msg.toRecipients ?? null),
+    cc: recipientAddresses(msg.ccRecipients ?? null),
+    bcc: recipientAddresses(msg.bccRecipients ?? null),
+    webLink: msg.webLink ?? null,
+    composeLink: composeLinkFromWebLink(msg.webLink ?? null),
+  };
 }
 
 function envelopeOf<T>(raw: RawPageResponse<T>): PageEnvelope<T> {
@@ -307,6 +429,133 @@ export class MailResource {
       contentType: raw.contentType ?? null,
       size: contentBytes.byteLength,
     };
+  }
+
+  /**
+   * POST /me/messages — create a draft. Graph drops it into the user's
+   * Drafts folder; nothing is sent. The plugin never sends mail by design.
+   */
+  async draft(input: DraftInput): Promise<DraftSummary> {
+    if (input.to.length === 0) {
+      throw new Error('At least one --to recipient is required.');
+    }
+    const payload = {
+      subject: input.subject,
+      body: {
+        contentType: input.html ? 'HTML' : 'Text',
+        content: input.body,
+      },
+      toRecipients: toRecipients(input.to),
+      ccRecipients: toRecipients(input.cc),
+      bccRecipients: toRecipients(input.bcc),
+    };
+    try {
+      const created = (await this.graph.api('/me/messages').post(payload)) as Message;
+      return draftSummaryFrom(created);
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /**
+   * POST /me/messages/<id>/createReply (or createReplyAll) followed by PATCH
+   * of the body. Graph's createReply seeds the draft with the quoted
+   * original; the PATCH overlays the user's reply text on top.
+   */
+  async reply(messageId: string, input: ReplyInput): Promise<DraftSummary> {
+    const endpoint = input.replyAll ? 'createReplyAll' : 'createReply';
+    const idEnc = encodeURIComponent(messageId);
+    try {
+      // Step 1: createReply / createReplyAll. POST with no body returns the
+      // seeded draft message resource.
+      const seeded = (await this.graph
+        .api(`/me/messages/${idEnc}/${endpoint}`)
+        .post({})) as Message;
+      if (!seeded || !seeded.id) {
+        throw new Error('Graph did not return a draft id from createReply.');
+      }
+      // Step 2: PATCH the body onto the seeded draft. Graph preserves the
+      // quoted original below the new content.
+      const patched = (await this.graph
+        .api(`/me/messages/${encodeURIComponent(seeded.id)}`)
+        .patch({
+          body: {
+            contentType: input.html ? 'HTML' : 'Text',
+            content: input.body,
+          },
+        })) as Message;
+      // PATCH may return a thin object; fall back to the seeded message for
+      // any field PATCH dropped (e.g. recipients, webLink).
+      return draftSummaryFrom({ ...seeded, ...patched });
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /**
+   * POST /me/messages/<id>/createForward with a comment and recipients.
+   * Graph composes the forward draft with the quoted original; the comment
+   * is prepended above it.
+   */
+  async forward(messageId: string, input: ForwardInput): Promise<DraftSummary> {
+    if (input.to.length === 0) {
+      throw new Error('At least one --to recipient is required for forward.');
+    }
+    const idEnc = encodeURIComponent(messageId);
+    const payload: Record<string, unknown> = {
+      comment: input.comment ?? '',
+      toRecipients: toRecipients(input.to),
+    };
+    if (input.cc && input.cc.length > 0) {
+      payload.ccRecipients = toRecipients(input.cc);
+    }
+    try {
+      const created = (await this.graph
+        .api(`/me/messages/${idEnc}/createForward`)
+        .post(payload)) as Message;
+      return draftSummaryFrom(created);
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /**
+   * POST /me/messages/<draftId>/attachments — attach a file inline.
+   *
+   * Caps at 3 MB (Graph's inline-attachment limit). Larger files require
+   * the createUploadSession + chunked PUT flow, which is intentionally out
+   * of scope for this slice.
+   */
+  async addAttachment(
+    draftId: string,
+    input: AddAttachmentInput,
+  ): Promise<AddAttachmentSummary> {
+    if (input.contentBytes.byteLength > INLINE_ATTACHMENT_MAX_BYTES) {
+      throw new Error(
+        `Attachment is ${input.contentBytes.byteLength} bytes; inline attachments cap at ${INLINE_ATTACHMENT_MAX_BYTES} bytes (3 MB). Files this large require Graph's createUploadSession API, which is not yet implemented.`,
+      );
+    }
+    const payload = {
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: input.name,
+      contentType: input.contentType,
+      contentBytes: input.contentBytes.toString('base64'),
+      isInline: input.isInline ?? false,
+    };
+    try {
+      const created = (await this.graph
+        .api(`/me/messages/${encodeURIComponent(draftId)}/attachments`)
+        .post(payload)) as FileAttachment;
+      return {
+        attachmentId: created?.id ?? null,
+        name: created?.name ?? input.name,
+        contentType: created?.contentType ?? input.contentType,
+        size: created?.size ?? input.contentBytes.byteLength,
+        isInline: created?.isInline ?? (input.isInline ?? false),
+      };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
   }
 
   /**

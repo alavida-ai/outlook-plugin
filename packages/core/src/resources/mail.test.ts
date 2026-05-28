@@ -3,6 +3,7 @@ import { Client } from '@microsoft/microsoft-graph-client';
 
 import { OutlookClient } from '../client.js';
 import {
+  composeLinkFromWebLink,
   normaliseDateForFilter,
   sanitiseAttachmentName,
 } from './mail.js';
@@ -12,17 +13,23 @@ interface FakeRequest {
   query: ReturnType<typeof vi.fn>;
   header: ReturnType<typeof vi.fn>;
   get: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
+  patch: ReturnType<typeof vi.fn>;
   capturedPaths: string[];
   capturedQueries: Array<Record<string, unknown>>;
   capturedHeaders: Array<[string, string]>;
+  capturedPosts: unknown[];
+  capturedPatches: unknown[];
+  capturedMethods: string[];
 }
 
 /**
  * Build a fake Graph client that records the .api() path, all .query() args
  * and .header() args, and returns the supplied responses in order.
  *
- * Each call to .api() returns a chainable object whose .get() resolves to
- * the next queued response.
+ * Each call to .api() returns a chainable object whose .get()/.post()/.patch()
+ * resolves to the next queued response. A single shared queue is used so the
+ * caller controls the response order independent of which HTTP verb fires.
  */
 function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } {
   const queue = [...responses];
@@ -31,9 +38,14 @@ function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } 
     query: vi.fn(),
     header: vi.fn(),
     get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
     capturedPaths: [],
     capturedQueries: [],
     capturedHeaders: [],
+    capturedPosts: [],
+    capturedPatches: [],
+    capturedMethods: [],
   };
 
   const chain = {
@@ -48,7 +60,20 @@ function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } 
       return chain;
     },
     async get() {
+      calls.capturedMethods.push('GET');
       calls.get();
+      return queue.shift();
+    },
+    async post(body: unknown) {
+      calls.capturedMethods.push('POST');
+      calls.capturedPosts.push(body);
+      calls.post(body);
+      return queue.shift();
+    },
+    async patch(body: unknown) {
+      calls.capturedMethods.push('PATCH');
+      calls.capturedPatches.push(body);
+      calls.patch(body);
       return queue.shift();
     },
   };
@@ -281,5 +306,226 @@ describe('MailResource.downloadAttachment', () => {
     const out = new OutlookClient(graph);
     const r = await out.mail.downloadAttachment('m', 'a3');
     expect(r.name).toBe('passwd');
+  });
+});
+
+describe('composeLinkFromWebLink', () => {
+  it('extracts ItemID and URL-encodes it', () => {
+    const web =
+      'https://outlook.office.com/mail/inbox/id/AAA%2BBBB?ItemID=AQMkA%2FBcd%3D';
+    expect(composeLinkFromWebLink(web)).toBe(
+      'https://outlook.cloud.microsoft/mail/compose/AQMkA%2FBcd%3D',
+    );
+  });
+  it('returns null when ItemID is absent', () => {
+    expect(composeLinkFromWebLink('https://outlook.office.com/mail/id/123')).toBeNull();
+  });
+  it('returns null when webLink is empty / malformed', () => {
+    expect(composeLinkFromWebLink(null)).toBeNull();
+    expect(composeLinkFromWebLink(undefined)).toBeNull();
+    expect(composeLinkFromWebLink('not a url')).toBeNull();
+  });
+});
+
+describe('MailResource.draft', () => {
+  it('POSTs /me/messages with text body and recipient envelope', async () => {
+    const { graph, calls } = fakeGraph([
+      {
+        id: 'draft-1',
+        subject: 'Hello',
+        webLink: 'https://outlook.office.com/mail/drafts/id/x?ItemID=AAA%3D',
+        toRecipients: [{ emailAddress: { address: 'a@example.com' } }],
+        ccRecipients: [{ emailAddress: { address: 'c@example.com' } }],
+        bccRecipients: [],
+      },
+    ]);
+    const out = new OutlookClient(graph);
+    const summary = await out.mail.draft({
+      subject: 'Hello',
+      body: 'Hi there',
+      to: ['a@example.com'],
+      cc: ['c@example.com'],
+    });
+    expect(calls.capturedPaths).toEqual(['/me/messages']);
+    expect(calls.capturedMethods).toEqual(['POST']);
+    expect(calls.capturedPosts[0]).toMatchObject({
+      subject: 'Hello',
+      body: { contentType: 'Text', content: 'Hi there' },
+      toRecipients: [{ emailAddress: { address: 'a@example.com' } }],
+      ccRecipients: [{ emailAddress: { address: 'c@example.com' } }],
+      bccRecipients: [],
+    });
+    expect(summary.id).toBe('draft-1');
+    expect(summary.to).toEqual(['a@example.com']);
+    expect(summary.cc).toEqual(['c@example.com']);
+    expect(summary.composeLink).toBe(
+      'https://outlook.cloud.microsoft/mail/compose/AAA%3D',
+    );
+  });
+
+  it('uses HTML content-type when html=true', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'd2', subject: 's', toRecipients: [], ccRecipients: [], bccRecipients: [] },
+    ]);
+    const out = new OutlookClient(graph);
+    await out.mail.draft({
+      subject: 's',
+      body: '<p>hi</p>',
+      html: true,
+      to: ['a@example.com'],
+    });
+    expect(calls.capturedPosts[0]).toMatchObject({
+      body: { contentType: 'HTML', content: '<p>hi</p>' },
+    });
+  });
+
+  it('rejects empty recipient list', async () => {
+    const { graph } = fakeGraph([]);
+    const out = new OutlookClient(graph);
+    await expect(
+      out.mail.draft({ subject: 's', body: 'b', to: [] }),
+    ).rejects.toThrow('--to recipient');
+  });
+});
+
+describe('MailResource.reply', () => {
+  it('POSTs createReply then PATCHes the body', async () => {
+    const seeded = {
+      id: 'draft-reply',
+      subject: 'RE: hi',
+      webLink: 'https://outlook.office.com/mail/drafts/x?ItemID=BBB',
+      toRecipients: [{ emailAddress: { address: 'sender@example.com' } }],
+      ccRecipients: [],
+      bccRecipients: [],
+    };
+    const { graph, calls } = fakeGraph([
+      seeded,
+      { id: 'draft-reply', subject: 'RE: hi' },
+    ]);
+    const out = new OutlookClient(graph);
+    const summary = await out.mail.reply('msg-1', { body: 'Got it.', html: false });
+    expect(calls.capturedPaths).toEqual([
+      '/me/messages/msg-1/createReply',
+      '/me/messages/draft-reply',
+    ]);
+    expect(calls.capturedMethods).toEqual(['POST', 'PATCH']);
+    expect(calls.capturedPosts[0]).toEqual({});
+    expect(calls.capturedPatches[0]).toMatchObject({
+      body: { contentType: 'Text', content: 'Got it.' },
+    });
+    expect(summary.id).toBe('draft-reply');
+    expect(summary.to).toEqual(['sender@example.com']);
+    expect(summary.composeLink).toBe(
+      'https://outlook.cloud.microsoft/mail/compose/BBB',
+    );
+  });
+
+  it('routes to createReplyAll when replyAll=true', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'd', subject: 's', toRecipients: [], ccRecipients: [], bccRecipients: [] },
+      { id: 'd' },
+    ]);
+    const out = new OutlookClient(graph);
+    await out.mail.reply('m', { body: 'b', replyAll: true });
+    expect(calls.capturedPaths[0]).toBe('/me/messages/m/createReplyAll');
+  });
+});
+
+describe('MailResource.forward', () => {
+  it('POSTs createForward with comment + recipients', async () => {
+    const { graph, calls } = fakeGraph([
+      {
+        id: 'fwd-1',
+        subject: 'FW: hi',
+        webLink: 'https://outlook.office.com/mail/drafts/x?ItemID=CCC',
+        toRecipients: [{ emailAddress: { address: 'next@example.com' } }],
+        ccRecipients: [{ emailAddress: { address: 'cc@example.com' } }],
+        bccRecipients: [],
+      },
+    ]);
+    const out = new OutlookClient(graph);
+    const summary = await out.mail.forward('msg-1', {
+      to: ['next@example.com'],
+      cc: ['cc@example.com'],
+      comment: 'fyi',
+    });
+    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1/createForward']);
+    expect(calls.capturedMethods).toEqual(['POST']);
+    expect(calls.capturedPosts[0]).toMatchObject({
+      comment: 'fyi',
+      toRecipients: [{ emailAddress: { address: 'next@example.com' } }],
+      ccRecipients: [{ emailAddress: { address: 'cc@example.com' } }],
+    });
+    expect(summary.id).toBe('fwd-1');
+    expect(summary.cc).toEqual(['cc@example.com']);
+  });
+
+  it('defaults comment to empty string', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'f', subject: 'FW', toRecipients: [], ccRecipients: [], bccRecipients: [] },
+    ]);
+    const out = new OutlookClient(graph);
+    await out.mail.forward('m', { to: ['x@example.com'] });
+    expect(calls.capturedPosts[0]).toMatchObject({ comment: '' });
+  });
+
+  it('rejects empty recipient list', async () => {
+    const { graph } = fakeGraph([]);
+    const out = new OutlookClient(graph);
+    await expect(out.mail.forward('m', { to: [] })).rejects.toThrow('--to recipient');
+  });
+});
+
+describe('MailResource.addAttachment', () => {
+  it('POSTs base64-encoded fileAttachment payload', async () => {
+    const { graph, calls } = fakeGraph([
+      {
+        id: 'att-1',
+        name: 'hi.txt',
+        contentType: 'text/plain',
+        size: 5,
+        isInline: false,
+      },
+    ]);
+    const out = new OutlookClient(graph);
+    const summary = await out.mail.addAttachment('draft-1', {
+      name: 'hi.txt',
+      contentType: 'text/plain',
+      contentBytes: Buffer.from('hello'),
+    });
+    expect(calls.capturedPaths).toEqual(['/me/messages/draft-1/attachments']);
+    expect(calls.capturedMethods).toEqual(['POST']);
+    expect(calls.capturedPosts[0]).toMatchObject({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: 'hi.txt',
+      contentType: 'text/plain',
+      contentBytes: Buffer.from('hello').toString('base64'),
+      isInline: false,
+    });
+    expect(summary.attachmentId).toBe('att-1');
+    expect(summary.size).toBe(5);
+  });
+
+  it('honours isInline=true', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'a', name: 'img.png', contentType: 'image/png', size: 1, isInline: true },
+    ]);
+    const out = new OutlookClient(graph);
+    await out.mail.addAttachment('d', {
+      name: 'img.png',
+      contentType: 'image/png',
+      contentBytes: Buffer.from([0]),
+      isInline: true,
+    });
+    expect(calls.capturedPosts[0]).toMatchObject({ isInline: true });
+  });
+
+  it('rejects files larger than 3 MB', async () => {
+    const { graph } = fakeGraph([]);
+    const out = new OutlookClient(graph);
+    const big = Buffer.alloc(3 * 1024 * 1024 + 1);
+    await expect(
+      out.mail.addAttachment('d', { name: 'big.bin', contentType: 'application/octet-stream', contentBytes: big }),
+    ).rejects.toThrow('createUploadSession');
   });
 });

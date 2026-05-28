@@ -22,6 +22,10 @@ Commands:
   mail folders               List mail folders.
   mail attachments           List attachments on a message.
   mail download-attachment   Save an attachment to disk.
+  mail draft                 Create a draft message.
+  mail reply                 Create a draft reply (also --all).
+  mail forward               Create a draft forward.
+  mail add-attachment        Attach a file to a draft.
 
 Global flags:
   --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
@@ -88,6 +92,22 @@ async function main(argv: string[]): Promise<number> {
     }
     if (second === 'download-attachment') {
       const { run } = await import('./commands/mail-download-attachment.js');
+      return run(rest);
+    }
+    if (second === 'draft') {
+      const { run } = await import('./commands/mail-draft.js');
+      return run(rest);
+    }
+    if (second === 'reply') {
+      const { run } = await import('./commands/mail-reply.js');
+      return run(rest);
+    }
+    if (second === 'forward') {
+      const { run } = await import('./commands/mail-forward.js');
+      return run(rest);
+    }
+    if (second === 'add-attachment') {
+      const { run } = await import('./commands/mail-add-attachment.js');
       return run(rest);
     }
     eprintln(`Unknown mail subcommand: ${second ?? '(none)'}.`);
