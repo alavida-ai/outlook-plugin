@@ -1,4 +1,35 @@
-// Public API of @alavida-ai/outlook-core. Exports added per task as the
-// surface fills in. Anything not re-exported here is internal to the
-// package.
-export {};
+export {
+  AuthError,
+  AuthCacheMissingError,
+  AuthCacheCorruptError,
+  AuthRefreshFailedError,
+  AuthInteractionRequiredError,
+  AuthAmbiguousAccountError,
+  AuthLockTimeoutError,
+} from './auth/errors.js';
+
+export type { TokenCache } from './auth/cache.js';
+export { FileTokenCache } from './auth/cache-file.js';
+export type { LockOptions } from './auth/cache-file.js';
+
+export {
+  buildMsalApp,
+  EMBEDDED_CLIENT_ID,
+  EMBEDDED_TENANT,
+  OUTLOOK_SCOPES,
+} from './auth/msal.js';
+export type { BuildMsalAppOptions } from './auth/msal.js';
+
+export { resolveAccount } from './auth/accounts.js';
+
+export { getAccessToken } from './auth/silent.js';
+export type { AccessTokenResult, GetAccessTokenInput } from './auth/silent.js';
+
+export { loginDeviceCode } from './auth/device-code.js';
+export type { LoginDeviceCodeInput, LoginResult } from './auth/device-code.js';
+
+export { logout } from './auth/logout.js';
+export type { LogoutInput } from './auth/logout.js';
+
+export { status } from './auth/status.js';
+export type { StatusInput } from './auth/status.js';
