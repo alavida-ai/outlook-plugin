@@ -1,0 +1,50 @@
+{
+  "name": "@alavida-ai/outlook-plugin-openclaw",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin: native tools for reading mail, drafting messages, and managing calendar via Microsoft Graph.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "homepage": "https://github.com/alavida-ai/outlook-cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alavida-ai/outlook-cli.git",
+    "directory": "packages/openclaw"
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "skills",
+    "README.md"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@alavida-ai/outlook-core": "workspace:*",
+    "typebox": "^1.1.38"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24-beta.2"
+  },
+  "devDependencies": {
+    "openclaw": "2026.5.12"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.24-beta.2",
+      "pluginSdkVersion": "2026.3.24-beta.2"
+    }
+  },
+  "engines": { "node": ">=20" }
+}

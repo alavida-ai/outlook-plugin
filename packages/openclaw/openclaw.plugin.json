@@ -1,0 +1,32 @@
+{
+  "id": "outlook",
+  "name": "outlook",
+  "description": "Read and triage Microsoft Outlook mail + calendar via Microsoft Graph as the signed-in user. Delegated permissions; draft-only mail.",
+  "skills": ["./skills"],
+  "contracts": {
+    "tools": ["whoami"]
+  },
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "clientId": {
+        "type": "string",
+        "description": "Override the embedded Entra app id."
+      },
+      "tenantId": {
+        "type": "string",
+        "description": "Override the default tenant ('common')."
+      },
+      "tokenCachePath": {
+        "type": "string",
+        "description": "Path to the MSAL token cache. Defaults to ~/.outlook-cli/tokens.json."
+      },
+      "account": {
+        "type": "string",
+        "description": "UPN to use when multiple accounts are cached. Required for multi-account hosts."
+      }
+    }
+  }
+}
