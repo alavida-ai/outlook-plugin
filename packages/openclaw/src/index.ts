@@ -42,6 +42,7 @@ import calendarUpdate from './tools/calendar-update.js';
 import calendarDelete from './tools/calendar-delete.js';
 import calendarRespond from './tools/calendar-respond.js';
 import calendarAvailability from './tools/calendar-availability.js';
+import contactsList from './tools/contacts-list.js';
 
 const TOOLS: ToolDescriptor[] = [
   whoami,
@@ -67,6 +68,7 @@ const TOOLS: ToolDescriptor[] = [
   calendarDelete,
   calendarRespond,
   calendarAvailability,
+  contactsList,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

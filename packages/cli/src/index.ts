@@ -38,6 +38,7 @@ Commands:
   calendar delete            Cancel an event (notifies attendees).
   calendar respond           Accept/decline/tentatively-accept an invite.
   calendar availability      Free/busy across one or more users.
+  contacts list              (stub — not yet implemented).
 
 Global flags:
   --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
@@ -176,6 +177,15 @@ async function main(argv: string[]): Promise<number> {
       return run(rest);
     }
     eprintln(`Unknown calendar subcommand: ${second ?? '(none)'}.`);
+    return 1;
+  }
+
+  if (first === 'contacts') {
+    if (second === 'list') {
+      const { run } = await import('./commands/contacts-list.js');
+      return run(rest);
+    }
+    eprintln(`Unknown contacts subcommand: ${second ?? '(none)'}.`);
     return 1;
   }
 

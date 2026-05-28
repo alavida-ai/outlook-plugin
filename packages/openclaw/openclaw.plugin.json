@@ -27,7 +27,8 @@
       "calendar_update",
       "calendar_delete",
       "calendar_respond",
-      "calendar_availability"
+      "calendar_availability",
+      "contacts_list"
     ]
   },
   "activation": { "onStartup": true },
