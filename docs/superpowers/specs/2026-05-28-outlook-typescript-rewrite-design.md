@@ -20,9 +20,12 @@ Rewrite the Python `outlook-cli` as a TypeScript pnpm monorepo so we can:
 
 - Adding new functionality. The new code must be **at parity** with the current
   Python CLI surface — same commands, same flags, same JSON envelopes, same
-  stderr/stdout discipline.
+  stderr/stdout discipline. The one exception is auth — see §4 below, where we
+  *do* invest in concrete robustness commitments the Python version lacks.
 - OS keychain support for token storage. Native bindings add `allowBuilds`
-  exposure and breakage risk; the file fallback we already rely on is sufficient.
+  exposure and breakage risk; the file fallback we already rely on is sufficient
+  and is the only option on the VPS anyway. Keychain stays open for v2 behind
+  the `TokenCache` interface (§4.3).
 - Multi-tenant / per-client policy layers. Microsoft Graph's schema is the same
   for every tenant, so there is no equivalent of SGIL's `attio-sgil` policy
   package.
@@ -100,6 +103,131 @@ One token cache, two consumers.
   as today. If the cache is missing/expired, every tool throws a structured
   `AuthError` pointing the user at `outlook auth login`.
 
+### 4.1 Why file-only (no OS keychain)
+
+The Python implementation uses `keyring` (OS keychain) with a file fallback.
+The TS rewrite is **file-only on purpose**:
+
+- **Primary deployment is a headless VPS.** OpenClaw runs as a daemon under
+  the chibote user. There is no OS keychain there; `keyring` already falls
+  back to the file path on Linux without libsecret. The "primary path" is
+  the fallback path.
+- **Node OS-keychain bindings are a step backward.** `keytar` is unmaintained
+  (2024 archival); `@napi-rs/keyring` is newer but adds native binary builds
+  to `allowBuilds`, expands the install-script surface (the exact thing the
+  KB's supply-chain hardening minimises), and breaks `pnpm install --frozen-lockfile`
+  on novel architectures.
+- **The "encryption at rest" win is mostly illusory on a developer laptop.**
+  Same-user code can already read `$HOME`; keychain only protects against
+  other UNIX users, which `chmod 0600` also handles. Full-disk encryption
+  (FileVault / LUKS) is the real defence and doesn't depend on keychain.
+- **Robustness is a different axis from encryption.** §4.2 below adds
+  atomicity, locking, integrity checks, and a defined error taxonomy — none
+  of which the current Python+keyring code has. Those are the wins for
+  "very very robust auth".
+
+OS keychain support stays open as a v2 optional-dependency feature; the
+shape of the cache abstraction in §4.3 doesn't change if we add it.
+
+### 4.2 Robustness commitments
+
+Outlook auth is the load-bearing surface — a corrupted cache, a race between
+concurrent refreshes, or a silent multi-account ambiguity all break the
+plugin in ways that look like "the agent is broken". The TS rewrite makes
+these concrete commitments, none of which exist (or are implicit-and-flaky)
+in the current Python implementation.
+
+1. **Atomic cache writes.** Every cache update writes to
+   `tokens.json.tmp.<pid>.<rand>`, `fsync`s, then `fs.renameSync` to the
+   canonical path. POSIX rename is atomic — a crash mid-write never leaves
+   a half-written file. Wired into the MSAL `beforeCacheAccess` /
+   `afterCacheAccess` plugin hooks so msal-node's serialiser benefits.
+
+2. **Cross-process refresh lock.** Before any refresh, acquire a lock by
+   creating `tokens.lock` with `fs.open(..., 'wx')` (`O_EXCL`). Retry with
+   exponential backoff up to 30s. Stale-lock detection: if the lock file's
+   mtime is older than 60s the holder is presumed dead and the lock is
+   force-taken. CLI and OpenClaw plugin can run concurrently against the
+   same cache without losing refresh tokens.
+
+3. **Cache integrity check on read.** Validate the JSON parses and matches
+   the expected MSAL cache schema (top-level keys: `AccessToken`,
+   `RefreshToken`, `IdToken`, `Account`, `AppMetadata`). On corruption, log
+   a structured warning to stderr (CLI) or emit a tool-error envelope
+   (plugin) and treat as "not logged in" — **never** crash with
+   `Unexpected end of JSON input`.
+
+4. **Defined error taxonomy.** All subclass `AuthError`:
+   - `AuthCacheMissingError` — no cache file; run `outlook auth login`
+   - `AuthCacheCorruptError` — file present but unreadable; same fix
+   - `AuthRefreshFailedError` — refresh token rejected; same fix
+   - `AuthInteractionRequiredError` — Conditional Access / MFA re-prompt
+     required; same fix
+   - `AuthAmbiguousAccountError` — multiple accounts cached, none selected
+   - `AuthLockTimeoutError` — couldn't acquire the refresh lock in 30s
+   Every variant carries a human-readable `nextStep` string the CLI and
+   plugin both surface verbatim.
+
+5. **Multi-account handling.** MSAL's cache holds N accounts. Default
+   behaviour: if exactly one account is cached, use it; if multiple, throw
+   `AuthAmbiguousAccountError` listing the cached UPNs and require the
+   caller to disambiguate via:
+   - CLI: `--account <upn>` flag or `OUTLOOK_ACCOUNT` env var
+   - Plugin: `account` field on the plugin's `configSchema`
+   **Never silently pick `accounts[0]`.** The current Python does this —
+   it's the cause of "wrong mailbox" bugs when a user has both personal
+   and work Microsoft accounts.
+
+6. **File permissions enforced on every write.** Parent directory `0700`,
+   file `0600`. Re-applied after every rename; never trust prior state.
+   Catches the case where a sibling process recreated the file with
+   default umask, or a backup tool restored it with `0644`.
+
+7. **Logout is idempotent and complete.** `outlook auth logout` removes
+   `tokens.json`, the lock file, **and** any prior `keyring` entries the
+   Python implementation may have left in macOS Keychain / Secret Service
+   (migration kindness for users coming from the Python install — a
+   one-shot best-effort delete that ignores not-found errors).
+
+8. **Same Entra app id as the Python CLI.**
+   `18f9e6ff-2b0a-423e-bb35-ab9b541e604e`, tenant `common`. Users
+   migrating from Python don't re-consent. The `AZURE_CLIENT_ID` /
+   `AZURE_TENANT_ID` override env vars keep working (escape hatch for
+   clients on dedicated Entra apps).
+
+9. **Same scope set as today.** `Mail.ReadWrite`, `Calendars.ReadWrite`,
+   `Calendars.ReadWrite.Shared`, `Contacts.ReadWrite`, `User.Read`.
+   `offline_access` added implicitly. Narrowing (e.g. `Mail.Read`-only
+   variant) is a future ticket — would force re-consent.
+
+10. **Auth test harness.** A fake transport mocks the MSAL discovery
+    (`/.well-known/openid-configuration`), device-code, and token
+    endpoints. Every error variant in §4.2.4 has at least one happy-path
+    and one failure-path test. Concurrency test: two simultaneous refresh
+    attempts against a single cache must both succeed and the cache must
+    contain a valid refresh token at the end.
+
+### 4.3 Cache abstraction
+
+`core/src/auth/cache.ts` exports `TokenCache` interface with `load()`,
+`save(blob)`, `clear()`, and `lock<T>(fn): Promise<T>`. The default
+implementation is `FileTokenCache` (atomic writes + `O_EXCL` lock as above).
+Any future backend (OS keychain, secret manager) plugs into the same
+interface without touching call sites.
+
+### 4.4 Threat model — explicit non-goals
+
+- A malicious process running as the same UNIX user. The `0600` file
+  permission only protects against *other* UNIX users; same-user code can
+  read any file in `$HOME`. Defence is the OS user boundary, not us.
+- A stolen, unlocked laptop. The cache is plaintext. FileVault / LUKS are
+  the answer; we don't add a second encryption layer of dubious benefit.
+- Microsoft revoking the embedded Entra app id. Fallback is the
+  `AZURE_CLIENT_ID` override — same escape hatch as Python.
+- Token sniffing in process memory. Out of scope; if the attacker is
+  reading our process memory, plaintext tokens are the least of the
+  user's problems.
+
 ## OpenClaw tool surface
 
 One tool per current CLI subcommand. Snake_case names, matching sgil-crm.
@@ -133,7 +261,8 @@ params via the `registerTool` helper copied from sgil-crm.
 | Tests | vitest | Same as sgil-crm. |
 | Lint/format | eslint 9 + prettier | Same as sgil-crm. |
 | Release | Changesets → path-tag-triggered GH Actions → GitHub Packages `@alavida-ai/*` | Per [openclaw-plugin-distribution.md](../../../.agentkb/alavida/wiki/openclaw-plugin-distribution.md). |
-| Token cache | Plain file `~/.outlook-cli/tokens.json` (0600). No OS keychain. | Native keychain bindings (keytar, @napi-rs/keyring) add `allowBuilds` entries + native build complexity for a benefit (encryption at rest) that's mostly illusory once anything on the box can read the home directory. The Python code already falls back to a file; the VPS will use file-only too. |
+| Token cache | Plain file `~/.outlook-cli/tokens.json` (0600). No OS keychain. Atomic writes via tmpfile+rename; cross-process refresh lock via `O_EXCL` on `tokens.lock`; integrity check on read; defined error taxonomy. See §4.1–§4.4 for the full robustness story. | Native keychain bindings (keytar, @napi-rs/keyring) add `allowBuilds` entries + native-build complexity for a benefit (encryption at rest) that's mostly illusory once anything on the box can read the home directory. The Python code already falls back to a file; the VPS will use file-only too. The robustness wins this rewrite *does* care about (atomicity, locking, integrity, error taxonomy) are spec'd in §4.2. |
+| Auth concurrency | Custom ~50-LOC `O_EXCL` file lock + tmpfile + rename | Zero deps. `proper-lockfile` was considered but pulls `graceful-fs` (a deep monkey-patcher of `fs`) — strictly more surface than the logic we'd write ourselves. |
 
 ## Supply-chain hardening (verbatim per Alavida KB)
 
