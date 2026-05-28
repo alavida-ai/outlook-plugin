@@ -33,3 +33,17 @@ export type { LogoutInput } from './auth/logout.js';
 
 export { status } from './auth/status.js';
 export type { StatusInput } from './auth/status.js';
+
+export { OutlookClient } from './client.js';
+export { makeGraphClient } from './graph/client.js';
+export type { MakeGraphClientOptions } from './graph/client.js';
+export { MeResource } from './resources/me.js';
+export type { MeProfile } from './resources/me.js';
+export {
+  CoreError,
+  NotFoundError,
+  ThrottledError,
+  ServerError,
+  NetworkError,
+  liftGraphError,
+} from './graph/errors.js';
