@@ -1,179 +1,168 @@
 # outlook-cli
 
-Alavida's CLI for Microsoft Outlook — mail, calendar, contacts via Microsoft Graph, designed for AI agents.
+Alavida's TypeScript monorepo for Microsoft Outlook — mail, calendar, contacts via Microsoft Graph, designed for AI agents.
 
-Python. Delegated permissions only (agent acts **as** the user). Device-code auth. OS-keychain-backed token storage. Draft-only mail (no send) — human stays in the loop.
+Three packages:
+
+| Package | Purpose |
+|---|---|
+| `@alavida-ai/outlook-core` | Microsoft Graph wrapper + MSAL device-code auth. Pure library — no stdout/stderr, no `process.exit`. |
+| `@alavida-ai/outlook-cli` | The `outlook` binary. Native `node:util` `parseArgs`, no CLI-framework dep. Used for local testing and one-time auth setup on OpenClaw hosts. |
+| `@alavida-ai/outlook-plugin-openclaw` | OpenClaw plugin. One `ToolDescriptor` per CLI subcommand. Bundles the agent-facing skill. |
+
+Draft-only mail (no send), delegated permissions only, OS-keychain-free file token cache with atomic writes + cross-process refresh lock + integrity checks. See `docs/superpowers/specs/2026-05-28-outlook-typescript-rewrite-design.md` for the full design.
 
 ## Status
 
-Phase 0 infrastructure + Phase 1 mail (partial) live. Calendar + contacts + remaining mail features in [PLAN.md](PLAN.md). Agent-facing reference in [SKILL.md](SKILL.md).
+TypeScript port of the original Python `outlook-cli`. Foundation + 23 tools shipped (whoami, mail-read/write/triage, calendar, contacts stub). At parity with the Python CLI's surface. See [PLAN.md history in git](https://github.com/alavida-ai/outlook-cli/commits/main) for the slice-by-slice rollout. Agent-facing reference at [packages/openclaw/skills/outlook/SKILL.md](packages/openclaw/skills/outlook/SKILL.md).
 
 ## Architecture
 
 ```
-scripts/provision_entra_app.py   # one-shot: register the shared multi-tenant Entra app
-src/outlook_cli/
-  cli.py                         # Typer root app (`outlook ...`)
-  auth.py                        # MSAL device-code flow + keyring token storage
-  graph.py                       # msgraph-sdk client factory (auto-refresh)
-  commands/
-    _common.py                   # shared config helpers + JSON envelope
-    auth.py                      # `outlook auth`
-    mail.py                      # `outlook mail`
-    calendar.py                  # `outlook calendar` (stub)
-    contacts.py                  # `outlook contacts` (stub)
+outlook-cli/
+├── package.json                              # workspace root, pinned pnpm@11.1.2
+├── pnpm-workspace.yaml                       # supply-chain hardening
+├── scripts/check-pnpm.mjs                    # preinstall guard
+├── tsconfig.base.json, tsconfig.json
+├── eslint.config.js, .prettierrc.json, vitest.config.ts
+├── docs/superpowers/                         # spec + plan files
+└── packages/
+    ├── core/
+    │   └── src/
+    │       ├── auth/                         # MSAL, FileTokenCache, multi-account, error taxonomy
+    │       ├── graph/                        # MSAL → Graph auth provider, error lift
+    │       ├── resources/                    # me, mail, calendar
+    │       ├── client.ts                     # OutlookClient facade
+    │       └── index.ts                      # public barrel
+    ├── cli/
+    │   └── src/
+    │       ├── commands/                     # one file per `outlook <verb>` subcommand
+    │       ├── client.ts, output.ts, escapes.ts
+    │       └── index.ts                      # lazy-import dispatcher
+    └── openclaw/
+        ├── openclaw.plugin.json              # plugin manifest
+        ├── skills/outlook/                   # agent-facing skill (bundled)
+        └── src/
+            ├── tools/                        # one file per OpenClaw tool
+            ├── register.ts                   # shared output/help injection
+            ├── pretty.ts                     # shape-detected renderers
+            ├── client.ts                     # memoised getClient
+            └── index.ts                      # plugin entry
 ```
 
-## Permissions (delegated)
+## Permissions (delegated, no app perms)
 
-- `Mail.ReadWrite` — read + create/update drafts. **No send.**
+- `Mail.ReadWrite` — read + create/update drafts. **No `Mail.Send` scope.**
 - `Calendars.ReadWrite`
 - `Calendars.ReadWrite.Shared`
 - `Contacts.ReadWrite`
 - `User.Read`
-- `offline_access` (refresh tokens — added automatically)
+- `offline_access` (refresh tokens — added automatically by MSAL)
 
-Draft-only mail is deliberate: agent prepares, human sends. Matches FCA human-in-the-loop for regulated communications.
+Same scope set as the Python implementation; users migrating from Python don't re-consent.
 
 ## How auth works
 
-The CLI ships with a **shared multi-tenant Entra app** embedded in `auth.py:DEFAULT_CLIENT_ID`. End users never see a client ID or tenant ID. The `common` authority means sign-in works for personal Microsoft accounts and any work/school tenant.
+Embedded multi-tenant Entra app — same client id as the Python implementation (`18f9e6ff-2b0a-423e-bb35-ab9b541e604e`), `common` authority. End users sign in once via device-code, refresh tokens renew silently from then on.
 
-Per-client onboarding is **one consent click** by the client's IT admin:
+**Token cache** lives at `~/.outlook-cli/tokens.json` (0600), atomic writes via tmpfile + `fsync` + `rename`, cross-process refresh lock via `O_EXCL` on `tokens.json.lock`. Six typed `AuthError` variants surface via every CLI command and OpenClaw tool with a `nextStep` field pointing the user at the right command.
+
+Override the embedded app id via env vars (e.g. a client running their own Entra app):
+
+```bash
+export AZURE_CLIENT_ID=<their-app-id>
+export AZURE_TENANT_ID=<their-tenant-id>
 ```
-https://login.microsoftonline.com/<their-tenant>/adminconsent?client_id=<our-app-id>
-```
 
-End users authenticate once via device code, then it's silent refresh forever.
-
-Tokens live in the OS credential manager (macOS Keychain, Linux Secret Service, Windows Credential Manager), with a 0600-locked file fallback at `~/.outlook-cli/tokens.json` for headless systems.
-
-### Escape hatch: dedicated client app
-
-A paranoid client can run their own Entra app. Override via `.env`:
-
-```
-AZURE_CLIENT_ID=<their-app-id>
-AZURE_TENANT_ID=<their-tenant-id>
-```
+Per spec §4 ("Auth strategy"). Full robustness commitments — atomic writes, cross-process lock, integrity checks, multi-account handling, defined error taxonomy — are in §4.2 of the design doc.
 
 ## Setup
 
-### First-time (one-off, per outlook-cli install)
-
-1. `uv sync`
-2. (Only if bootstrapping a new Alavida app — skip if `DEFAULT_CLIENT_ID` already baked in)
-   ```bash
-   uv run python scripts/provision_entra_app.py --tenant alavidai.onmicrosoft.com --multi-tenant
-   ```
-   Paste the printed client id into `src/outlook_cli/auth.py:DEFAULT_CLIENT_ID`.
-
-### Per end user
+Prerequisites: Node ≥ 20, pnpm 11 (via `corepack enable`).
 
 ```bash
-uv run outlook auth login
+corepack enable
+pnpm install
+pnpm build
 ```
 
-Follows the device-code flow — prints a short URL + code to stderr, open URL in any browser, sign in, the command unblocks and caches the tokens.
+The build produces:
+- `packages/cli/dist/index.js` — the `outlook` binary (executable bit set)
+- `packages/openclaw/dist/index.js` — the plugin entry
+- `packages/core/dist/` — TypeScript declarations + sources
 
-**For agents:** spawn as a subprocess, read stderr in real time to get the URL + code, forward to the user, wait for the subprocess to exit. Stdout is left clean for machine-readable output; stderr is line-buffered so the URL appears immediately on a pipe. See [SKILL.md](SKILL.md) for a Python example.
-
-## Quick test
+## CLI usage
 
 ```bash
-uv run outlook whoami
-uv run outlook mail list --limit 5
-uv run outlook mail list --unread --json | jq '.count'
+# auth (one-time per user, refresh tokens auto-renew from then on)
+node packages/cli/dist/index.js auth login
+node packages/cli/dist/index.js auth status
+node packages/cli/dist/index.js auth logout
+
+# mail
+node packages/cli/dist/index.js mail list -u                        # unread inbox
+node packages/cli/dist/index.js mail list --from boss@co.com --json
+node packages/cli/dist/index.js mail draft --to x@y.com --subject "..." --body "..."
+node packages/cli/dist/index.js mail search "subject:invoice" --json
+
+# calendar
+node packages/cli/dist/index.js calendar list -d 7
+node packages/cli/dist/index.js calendar availability --emails a@b.com --emails c@d.com -d 5
 ```
 
-## OpenClaw skill
+After `pnpm link --global packages/cli` (or once we publish to GitHub Packages), `outlook` is on `$PATH` and the `node packages/cli/dist/index.js` prefix goes away.
 
-The CLI ships with a bundled OpenClaw skill that teaches the agent when and how to use `outlook ...`. The skill source is at `skills/outlook/` in this repo: `SKILL.md` (frontmatter + index) plus `references/{auth,mail,calendar,safety}.md`. They're bundled into the wheel via Hatch's `force-include` and shipped with every CLI install.
+All data commands support `--json`. Stdout = data, stderr = human messages — pipe stdout to `jq` safely.
 
-### Install
+Multi-account hosts: pass `--account <upn>` or set `OUTLOOK_ACCOUNT=<upn>`. The CLI never silently picks among cached accounts.
+
+## OpenClaw plugin
+
+The plugin runs every CLI subcommand as an OpenClaw `ToolDescriptor` — same `core` code path, no shelling out. Twenty-three tools registered (one per CLI subcommand minus the `auth` triplet which stays CLI-only).
+
+Distribution lives in `~/.agentkb/alavida/wiki/openclaw-plugin-distribution.md`. Once a GitHub Actions workflow publishes the plugin to GitHub Packages:
 
 ```bash
-outlook skill install                            # default → ~/.openclaw/skills/outlook
-outlook skill install --workspace ~/wkdir        # → ~/wkdir/skills/outlook
-OPENCLAW_WORKSPACE=~/wkdir outlook skill install # same as above, via env var
-outlook skill install --target /custom/path     # raw path override
-outlook skill install --force                    # overwrite existing
-outlook skill uninstall [--workspace|--target]   # remove (matches install resolution)
-outlook skill path                               # show bundled source path (--bundled, default)
-outlook skill path --installed [--workspace|--target]  # show resolved install path
-```
-
-After install, restart OpenClaw to pick the skill up:
-```bash
+# on the OpenClaw host
+openclaw plugins install @alavida-ai/outlook-plugin-openclaw
 openclaw gateway restart
-openclaw skills list             # should now show 'outlook'
+openclaw plugins inspect outlook
 ```
 
-### Which install path do I want?
+First-time setup requires running `outlook auth login` once on the OpenClaw host to populate the token cache. The plugin reads `~/.outlook-cli/tokens.json` directly.
 
-OpenClaw scans four locations when loading skills, in **decreasing precedence**:
+The bundled skill (`packages/openclaw/skills/outlook/`) is shipped inside the plugin tarball via the `skills` field in `openclaw.plugin.json`.
 
-| # | Path | Scope | When to install here |
-| --- | --- | --- | --- |
-| 1 | `<workspace>/skills/outlook` | One workspace, all agents in it | Override the global skill for a specific project; iterating on skill changes |
-| 2 | `<workspace>/.agents/skills/outlook` | One workspace, agent-namespace | Multi-agent team sharing a workspace; framework-managed skills |
-| 3 | `~/.agents/skills/outlook` | All workspaces, your user | Cross-workspace agent skills tied to your personal profile |
-| 4 | `~/.openclaw/skills/outlook` | All agents on this host | The everyone-gets-it default |
+## Supply-chain hardening
 
-If a skill name appears at multiple levels, the highest-precedence copy wins.
+Per `~/.agentkb/alavida/wiki/javascript-supply-chain-security.md`:
 
-#### Recommended setups
+- pnpm 11 pinned via `packageManager` in root `package.json`
+- `preinstall` guard refuses `npm` / `yarn` / `bun` (`scripts/check-pnpm.mjs`)
+- `pnpm-workspace.yaml`: per-package `allowBuilds`, `minimumReleaseAge: 1440`, `blockExoticSubdeps: true`, `verifyDepsBeforeRun: warn`
+- CI uses `pnpm install --frozen-lockfile`
 
-**Single agent on this host, one user (the common case — Amit's POC, dev box):**
-```bash
-outlook skill install         # → ~/.openclaw/skills/outlook  (host-shared, default)
-```
-Every agent on the host can use Outlook. Update with `--upgrade --force`.
-
-**Multi-agent host where every agent should have Outlook (Sun Global with multiple subagents — research, deal-flow, compliance, etc., all of which email):**
-```bash
-outlook skill install         # → ~/.openclaw/skills/outlook  (host-shared, default)
-```
-Same as above. Each agent picks up the skill from the managed location automatically; no per-agent install needed.
-
-**Multi-agent host where only some agents should have Outlook (e.g. only Amit's assistant, not the back-office bots):**
-```bash
-outlook skill install --workspace ~/agents/amit
-# only the agent with workspace=~/agents/amit sees Outlook
-```
-Skip the managed install, use per-workspace installs for the agents that need it.
-
-**Skill-development iteration (you're editing skill content and want to test changes without disturbing the global install):**
-```bash
-outlook skill install --workspace ~/dev/test-workspace
-# then run an agent with workspace=~/dev/test-workspace and your edits override the global skill
-```
-Because workspace-level beats host-shared in precedence, your dev edits win when running in that workspace.
-
-### Updating the skill
-
-Skill content is shipped inside the CLI wheel. To pick up new skill content, upgrade the CLI **then** re-run install with `--force`:
+## Development
 
 ```bash
-uv tool install --upgrade git+https://github.com/alavida-ai/outlook-cli
-outlook skill install --force         # default location
-outlook skill install --workspace ~/wkdir --force   # if you installed per-workspace
-openclaw gateway restart
+pnpm typecheck             # all 3 packages
+pnpm test                  # vitest, ~117 tests
+pnpm test:watch
+pnpm lint
+pnpm format
+pnpm build
 ```
 
-The CLI binary upgrade alone doesn't re-copy the skill — `outlook skill install --force` does.
+Tests live alongside source as `<name>.test.ts`. The token-cache, MSAL, and Graph tests use in-process fakes (no network).
 
-## Roadmap
+## Why not `@microsoft/microsoft-graph-client` v3 → Kiota SDK
 
-See [PLAN.md](PLAN.md) for the phased plan and [SKILL.md](SKILL.md) for the agent-facing command reference.
+The classic `@microsoft/microsoft-graph-client` ships with one transitive dep (`tslib`), no install scripts, built-in retry middleware, and a `PageIterator` for `@odata.nextLink` cursoring. The newer Kiota-based `@microsoft/msgraph-sdk-javascript` is Microsoft's long-term direction but is still maturing and pulls in heavier deps. We use the classic SDK; switching is a future ticket.
 
-## Why not olkcli?
+## References
 
-[`rlrghb/olkcli`](https://github.com/rlrghb/olkcli) is the mature reference implementation — well-designed Go CLI wrapping Graph. We're building our own because:
-
-1. Python matches the rest of the Alavida stack
-2. Anonymous author + young repo isn't defensible for FCA-regulated clients
-3. Draft-only mail is a design constraint, not an option
-4. `msgraph-sdk-python` does most of the heavy lifting — small surface to own
-
-olkcli remains a goldmine for CLI shape, scope choices, and agent-focused ergonomics.
+- Spec: [`docs/superpowers/specs/2026-05-28-outlook-typescript-rewrite-design.md`](docs/superpowers/specs/2026-05-28-outlook-typescript-rewrite-design.md)
+- Foundation plan: [`docs/superpowers/plans/2026-05-28-outlook-foundation-and-whoami.md`](docs/superpowers/plans/2026-05-28-outlook-foundation-and-whoami.md)
+- Granola precedent monorepo: https://github.com/alavida-ai/granola-plugin
+- Alavida supply-chain playbook: `~/.agentkb/alavida/wiki/javascript-supply-chain-security.md`
+- OpenClaw plugin distribution: `~/.agentkb/alavida/wiki/openclaw-plugin-distribution.md`
