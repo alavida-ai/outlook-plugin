@@ -15,6 +15,7 @@ interface FakeRequest {
   get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
   patch: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
   capturedPaths: string[];
   capturedQueries: Array<Record<string, unknown>>;
   capturedHeaders: Array<[string, string]>;
@@ -40,6 +41,7 @@ function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } 
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
     capturedPaths: [],
     capturedQueries: [],
     capturedHeaders: [],
@@ -74,6 +76,11 @@ function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } 
       calls.capturedMethods.push('PATCH');
       calls.capturedPatches.push(body);
       calls.patch(body);
+      return queue.shift();
+    },
+    async delete() {
+      calls.capturedMethods.push('DELETE');
+      calls.delete();
       return queue.shift();
     },
   };
@@ -527,5 +534,94 @@ describe('MailResource.addAttachment', () => {
     await expect(
       out.mail.addAttachment('d', { name: 'big.bin', contentType: 'application/octet-stream', contentBytes: big }),
     ).rejects.toThrow('createUploadSession');
+  });
+});
+
+describe('MailResource.move', () => {
+  it('POSTs /me/messages/<id>/move with well-known folder destination', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'new-msg-id', subject: 'hi' },
+    ]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.move('old-id', 'archive');
+    expect(calls.capturedPaths).toEqual(['/me/messages/old-id/move']);
+    expect(calls.capturedMethods).toEqual(['POST']);
+    expect(calls.capturedPosts[0]).toEqual({ destinationId: 'archive' });
+    expect(result).toEqual({
+      id: 'new-msg-id',
+      oldId: 'old-id',
+      destinationFolder: 'archive',
+    });
+  });
+
+  it('resolves a custom folder displayName before moving', async () => {
+    const { graph, calls } = fakeGraph([
+      { value: [{ id: 'fld-xyz', displayName: 'Projects' }] },
+      { id: 'new-msg-id', subject: 'p' },
+    ]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.move('msg-1', 'Projects');
+    expect(calls.capturedPaths).toEqual([
+      '/me/mailFolders',
+      '/me/messages/msg-1/move',
+    ]);
+    expect(calls.capturedPosts[0]).toEqual({ destinationId: 'fld-xyz' });
+    expect(result.destinationFolder).toBe('fld-xyz');
+    expect(result.id).toBe('new-msg-id');
+  });
+});
+
+describe('MailResource.delete', () => {
+  it('DELETEs /me/messages/<id> and returns deleted: true', async () => {
+    const { graph, calls } = fakeGraph([undefined]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.delete('msg-1');
+    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1']);
+    expect(calls.capturedMethods).toEqual(['DELETE']);
+    expect(result).toEqual({ id: 'msg-1', deleted: true });
+  });
+});
+
+describe('MailResource.mark', () => {
+  it('PATCHes isRead: true when read', async () => {
+    const { graph, calls } = fakeGraph([undefined]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.mark('msg-1', true);
+    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1']);
+    expect(calls.capturedMethods).toEqual(['PATCH']);
+    expect(calls.capturedPatches[0]).toEqual({ isRead: true });
+    expect(result).toEqual({ id: 'msg-1', isRead: true });
+  });
+
+  it('PATCHes isRead: false when unread', async () => {
+    const { graph, calls } = fakeGraph([undefined]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.mark('msg-1', false);
+    expect(calls.capturedPatches[0]).toEqual({ isRead: false });
+    expect(result.isRead).toBe(false);
+  });
+});
+
+describe('MailResource.flag', () => {
+  it('PATCHes flag.flagStatus', async () => {
+    const { graph, calls } = fakeGraph([undefined]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.flag('msg-1', 'flagged');
+    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1']);
+    expect(calls.capturedMethods).toEqual(['PATCH']);
+    expect(calls.capturedPatches[0]).toEqual({ flag: { flagStatus: 'flagged' } });
+    expect(result).toEqual({ id: 'msg-1', flagStatus: 'flagged' });
+  });
+});
+
+describe('MailResource.importance', () => {
+  it('PATCHes importance level', async () => {
+    const { graph, calls } = fakeGraph([undefined]);
+    const out = new OutlookClient(graph);
+    const result = await out.mail.importance('msg-1', 'high');
+    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1']);
+    expect(calls.capturedMethods).toEqual(['PATCH']);
+    expect(calls.capturedPatches[0]).toEqual({ importance: 'high' });
+    expect(result).toEqual({ id: 'msg-1', importance: 'high' });
   });
 });

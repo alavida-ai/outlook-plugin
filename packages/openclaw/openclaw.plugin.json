@@ -15,7 +15,12 @@
       "mail_draft",
       "mail_reply",
       "mail_forward",
-      "mail_add_attachment"
+      "mail_add_attachment",
+      "mail_move",
+      "mail_delete",
+      "mail_mark",
+      "mail_flag",
+      "mail_importance"
     ]
   },
   "activation": { "onStartup": true },

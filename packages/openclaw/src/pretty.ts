@@ -82,6 +82,20 @@ interface AddAttachmentSummaryShape {
   draftId?: string;
 }
 
+/**
+ * Common return shape for triage tools (move/delete/mark/flag/importance):
+ * always carries an `id`, plus exactly one of the discriminator fields below.
+ */
+interface TriageResultShape {
+  id: string;
+  oldId?: string;
+  destinationFolder?: string;
+  deleted?: true;
+  isRead?: boolean;
+  flagStatus?: 'flagged' | 'complete' | 'notFlagged';
+  importance?: 'low' | 'normal' | 'high';
+}
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -137,6 +151,18 @@ function isAddAttachmentSummary(p: unknown): p is AddAttachmentSummaryShape {
   );
 }
 
+function isTriageResult(p: unknown): p is TriageResultShape {
+  if (!isObject(p)) return false;
+  if (typeof (p as { id?: unknown }).id !== 'string') return false;
+  return (
+    'deleted' in p ||
+    'destinationFolder' in p ||
+    'isRead' in p ||
+    'flagStatus' in p ||
+    'importance' in p
+  );
+}
+
 /** Render an arbitrary tool payload as compact text. */
 export function renderPretty(payload: unknown): string {
   if (payload === undefined || payload === null) return '(no result)';
@@ -148,6 +174,7 @@ export function renderPretty(payload: unknown): string {
   if (isDownloadResult(payload)) return renderDownloadResult(payload);
   if (isAddAttachmentSummary(payload)) return renderAddAttachmentSummary(payload);
   if (isDraftSummary(payload)) return renderDraftSummary(payload);
+  if (isTriageResult(payload)) return renderTriageResult(payload);
 
   // Generic fallback — JSON.stringify (truncated for readability).
   try {
@@ -265,6 +292,27 @@ function renderDraftSummary(p: DraftSummaryShape): string {
     lines.push(`  open in Outlook: ${p.webLink}`);
   }
   return lines.join('\n');
+}
+
+function renderTriageResult(p: TriageResultShape): string {
+  if (p.deleted) {
+    return `Deleted ${p.id} (moved to Deleted Items).`;
+  }
+  if (p.destinationFolder !== undefined) {
+    const fromPart = p.oldId ? `${p.oldId} -> ` : '';
+    return `Moved ${fromPart}${p.destinationFolder}\n  new id: ${p.id}`;
+  }
+  if (p.isRead !== undefined) {
+    return `Marked ${p.isRead ? 'read' : 'unread'}: ${p.id}`;
+  }
+  if (p.flagStatus !== undefined) {
+    return `Flag set ${p.flagStatus}: ${p.id}`;
+  }
+  if (p.importance !== undefined) {
+    return `Importance set ${p.importance}: ${p.id}`;
+  }
+  // Should be unreachable given isTriageResult, but fall through safely.
+  return `Updated ${p.id}.`;
 }
 
 function renderAddAttachmentSummary(p: AddAttachmentSummaryShape): string {

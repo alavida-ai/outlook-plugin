@@ -26,6 +26,11 @@ Commands:
   mail reply                 Create a draft reply (also --all).
   mail forward               Create a draft forward.
   mail add-attachment        Attach a file to a draft.
+  mail move                  Move a message to another folder.
+  mail delete                Soft-delete a message (to Deleted Items).
+  mail mark                  Mark a message read or unread.
+  mail flag                  Set the follow-up flag.
+  mail importance            Set the importance level.
 
 Global flags:
   --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
@@ -108,6 +113,26 @@ async function main(argv: string[]): Promise<number> {
     }
     if (second === 'add-attachment') {
       const { run } = await import('./commands/mail-add-attachment.js');
+      return run(rest);
+    }
+    if (second === 'move') {
+      const { run } = await import('./commands/mail-move.js');
+      return run(rest);
+    }
+    if (second === 'delete') {
+      const { run } = await import('./commands/mail-delete.js');
+      return run(rest);
+    }
+    if (second === 'mark') {
+      const { run } = await import('./commands/mail-mark.js');
+      return run(rest);
+    }
+    if (second === 'flag') {
+      const { run } = await import('./commands/mail-flag.js');
+      return run(rest);
+    }
+    if (second === 'importance') {
+      const { run } = await import('./commands/mail-importance.js');
       return run(rest);
     }
     eprintln(`Unknown mail subcommand: ${second ?? '(none)'}.`);

@@ -559,6 +559,91 @@ export class MailResource {
   }
 
   /**
+   * POST /me/messages/<id>/move — move a message to another folder.
+   *
+   * Outlook reassigns the message id when it moves, so the returned `id` is
+   * different from the input `messageId`. `destinationFolder` reports the
+   * resolved id/well-known name we actually sent to Graph.
+   */
+  async move(
+    messageId: string,
+    folder: string,
+  ): Promise<{ id: string; oldId: string; destinationFolder: string }> {
+    try {
+      const destinationFolder = await this.resolveFolderId(folder);
+      const moved = (await this.graph
+        .api(`/me/messages/${encodeURIComponent(messageId)}/move`)
+        .post({ destinationId: destinationFolder })) as Message;
+      if (!moved || !moved.id) {
+        throw new Error('Graph returned a move response without an id.');
+      }
+      return { id: moved.id, oldId: messageId, destinationFolder };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /**
+   * DELETE /me/messages/<id> — soft-delete (Outlook moves to Deleted Items).
+   *
+   * Recoverable: the message lives in Deleted Items until the user empties
+   * the folder. There is no hard-delete in this surface.
+   */
+  async delete(messageId: string): Promise<{ id: string; deleted: true }> {
+    try {
+      await this.graph.api(`/me/messages/${encodeURIComponent(messageId)}`).delete();
+      return { id: messageId, deleted: true };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /** PATCH /me/messages/<id> — set the read/unread state. */
+  async mark(
+    messageId: string,
+    isRead: boolean,
+  ): Promise<{ id: string; isRead: boolean }> {
+    try {
+      await this.graph
+        .api(`/me/messages/${encodeURIComponent(messageId)}`)
+        .patch({ isRead });
+      return { id: messageId, isRead };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /** PATCH /me/messages/<id> — set the follow-up flag status. */
+  async flag(
+    messageId: string,
+    status: 'flagged' | 'complete' | 'notFlagged',
+  ): Promise<{ id: string; flagStatus: 'flagged' | 'complete' | 'notFlagged' }> {
+    try {
+      await this.graph
+        .api(`/me/messages/${encodeURIComponent(messageId)}`)
+        .patch({ flag: { flagStatus: status } });
+      return { id: messageId, flagStatus: status };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /** PATCH /me/messages/<id> — set the importance level. */
+  async importance(
+    messageId: string,
+    level: 'low' | 'normal' | 'high',
+  ): Promise<{ id: string; importance: 'low' | 'normal' | 'high' }> {
+    try {
+      await this.graph
+        .api(`/me/messages/${encodeURIComponent(messageId)}`)
+        .patch({ importance: level });
+      return { id: messageId, importance: level };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+  }
+
+  /**
    * Resolve `--folder` flag → Graph folder id.
    *
    * - Well-known names (case-insensitive) → lowercase alias Graph accepts.

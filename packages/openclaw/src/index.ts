@@ -30,6 +30,11 @@ import mailDraft from './tools/mail-draft.js';
 import mailReply from './tools/mail-reply.js';
 import mailForward from './tools/mail-forward.js';
 import mailAddAttachment from './tools/mail-add-attachment.js';
+import mailMove from './tools/mail-move.js';
+import mailDelete from './tools/mail-delete.js';
+import mailMark from './tools/mail-mark.js';
+import mailFlag from './tools/mail-flag.js';
+import mailImportance from './tools/mail-importance.js';
 
 const TOOLS: ToolDescriptor[] = [
   whoami,
@@ -43,6 +48,11 @@ const TOOLS: ToolDescriptor[] = [
   mailReply,
   mailForward,
   mailAddAttachment,
+  mailMove,
+  mailDelete,
+  mailMark,
+  mailFlag,
+  mailImportance,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
