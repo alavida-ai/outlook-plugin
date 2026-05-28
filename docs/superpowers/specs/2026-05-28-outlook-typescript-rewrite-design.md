@@ -351,7 +351,13 @@ OpenClaw host.
 - Widening `configSchema` to accept SecretRef object shape for `clientId`
   (per openclaw-secrets §4 recommendation). Not needed until we deploy in
   an environment that demands non-env secret resolution.
-- OS keychain via a future optional dependency.
+- **v1.1 — `KeychainTokenCache` backend** behind the `TokenCache` interface
+  (§4.3), gated by an `OUTLOOK_KEYCHAIN=1` env var (or CLI flag). Adds
+  `@napi-rs/keyring` as an `optionalDependencies` entry — only platforms
+  that actually use it pay the install cost. Trigger to prioritise: the
+  first regulated-client deployment that asks "is the token cache
+  encrypted at rest." File-only stays the default forever (the VPS has no
+  keychain). See §4.1 for why this isn't a v1 blocker.
 - A second `core` consumer (e.g. a small TUI mailbox triage tool).
 
 ## References
