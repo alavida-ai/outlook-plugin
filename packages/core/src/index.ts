@@ -40,6 +40,23 @@ export type { MakeGraphClientOptions } from './graph/client.js';
 export { MeResource } from './resources/me.js';
 export type { MeProfile } from './resources/me.js';
 export {
+  MailResource,
+  WELL_KNOWN_FOLDERS,
+  normaliseDateForFilter,
+  sanitiseAttachmentName,
+} from './resources/mail.js';
+export type {
+  MessageSummary,
+  MessageFull,
+  MailFolderSummary,
+  AttachmentSummary,
+  PageEnvelope,
+  ListMessagesOptions,
+  SearchMessagesOptions,
+  ReadMessageOptions,
+  DownloadAttachmentResult,
+} from './resources/mail.js';
+export {
   CoreError,
   NotFoundError,
   ThrottledError,

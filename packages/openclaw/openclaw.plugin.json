@@ -4,7 +4,15 @@
   "description": "Read and triage Microsoft Outlook mail + calendar via Microsoft Graph as the signed-in user. Delegated permissions; draft-only mail.",
   "skills": ["./skills"],
   "contracts": {
-    "tools": ["whoami"]
+    "tools": [
+      "whoami",
+      "mail_list",
+      "mail_read",
+      "mail_search",
+      "mail_folders",
+      "mail_list_attachments",
+      "mail_download_attachment"
+    ]
   },
   "activation": { "onStartup": true },
   "configSchema": {

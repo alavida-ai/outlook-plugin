@@ -20,8 +20,22 @@ import type { PluginConfig } from './client.js';
 import { readPluginConfig, registerTool, type ToolDescriptor } from './register.js';
 
 import whoami from './tools/whoami.js';
+import mailList from './tools/mail-list.js';
+import mailRead from './tools/mail-read.js';
+import mailSearch from './tools/mail-search.js';
+import mailFolders from './tools/mail-folders.js';
+import mailListAttachments from './tools/mail-list-attachments.js';
+import mailDownloadAttachment from './tools/mail-download-attachment.js';
 
-const TOOLS: ToolDescriptor[] = [whoami];
+const TOOLS: ToolDescriptor[] = [
+  whoami,
+  mailList,
+  mailRead,
+  mailSearch,
+  mailFolders,
+  mailListAttachments,
+  mailDownloadAttachment,
+];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const configJsonSchema: any = Type.Object({

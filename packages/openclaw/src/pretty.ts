@@ -1,20 +1,112 @@
 /**
  * Shape-detected pretty renderer for outlook tool results.
  *
- * This slice only ships `whoami`, so the renderer just handles the error
- * envelope and falls through to a truncated-JSON dump for everything else.
- * Outlook-specific renderers (whoami profile card, message-list table, etc.)
- * land in subsequent slices alongside the tools that produce those shapes.
+ * Each renderer is a small `if (isMessageList(p)) return renderX(p);` branch
+ * that fires when the result matches a known shape. Unknown shapes fall
+ * through to a truncated-JSON dump.
  */
 import { isToolErrorEnvelope, type ToolErrorEnvelope } from './errors.js';
+
+interface MessageSummaryShape {
+  id: string | null;
+  subject: string | null;
+  from: string | null;
+  receivedDateTime: string | null;
+  isRead: boolean | null;
+  hasAttachments: boolean | null;
+  bodyPreview: string | null;
+  webLink: string | null;
+}
+
+interface MessageFullShape extends MessageSummaryShape {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  importance: string | null;
+  bodyContentType: string | null;
+  body: string | null;
+}
+
+interface MessageListShape {
+  messages: MessageSummaryShape[];
+  count: number;
+  nextLink: string | null;
+}
+
+interface FolderListShape {
+  folders: Array<{
+    id: string | null;
+    displayName: string | null;
+    unreadItemCount: number;
+    totalItemCount: number;
+  }>;
+  count: number;
+  nextLink: string | null;
+}
+
+interface AttachmentListShape {
+  attachments: Array<{
+    id: string | null;
+    name: string | null;
+    contentType: string | null;
+    size: number | null;
+    isInline: boolean;
+  }>;
+  count: number;
+  nextLink: string | null;
+}
+
+interface DownloadResultShape {
+  path: string;
+  name: string;
+  contentType: string | null;
+  size: number;
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function isMessageList(p: unknown): p is MessageListShape {
+  return isObject(p) && Array.isArray((p as { messages?: unknown }).messages);
+}
+
+function isFolderList(p: unknown): p is FolderListShape {
+  return isObject(p) && Array.isArray((p as { folders?: unknown }).folders);
+}
+
+function isAttachmentList(p: unknown): p is AttachmentListShape {
+  return isObject(p) && Array.isArray((p as { attachments?: unknown }).attachments);
+}
+
+function isMessageFull(p: unknown): p is MessageFullShape {
+  if (!isObject(p)) return false;
+  return (
+    'subject' in p &&
+    'to' in p &&
+    Array.isArray((p as { to: unknown }).to) &&
+    'body' in p
+  );
+}
+
+function isDownloadResult(p: unknown): p is DownloadResultShape {
+  if (!isObject(p)) return false;
+  return (
+    typeof (p as { path?: unknown }).path === 'string' &&
+    typeof (p as { name?: unknown }).name === 'string' &&
+    typeof (p as { size?: unknown }).size === 'number'
+  );
+}
 
 /** Render an arbitrary tool payload as compact text. */
 export function renderPretty(payload: unknown): string {
   if (payload === undefined || payload === null) return '(no result)';
-
-  if (isToolErrorEnvelope(payload)) {
-    return renderError(payload);
-  }
+  if (isToolErrorEnvelope(payload)) return renderError(payload);
+  if (isMessageList(payload)) return renderMessageList(payload);
+  if (isMessageFull(payload)) return renderMessageFull(payload);
+  if (isFolderList(payload)) return renderFolderList(payload);
+  if (isAttachmentList(payload)) return renderAttachmentList(payload);
+  if (isDownloadResult(payload)) return renderDownloadResult(payload);
 
   // Generic fallback — JSON.stringify (truncated for readability).
   try {
@@ -34,4 +126,86 @@ function renderError(envelope: ToolErrorEnvelope): string {
     lines.push(`  accounts:    ${e.accounts.join(', ')}`);
   }
   return lines.join('\n');
+}
+
+function shortDate(s: string | null): string {
+  if (!s) return '';
+  return s.replace('T', ' ').slice(0, 16);
+}
+
+function renderMessageList(p: MessageListShape): string {
+  const lines: string[] = [`Messages (${p.count})`];
+  if (p.count === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const m of p.messages) {
+      const unread = m.isRead === false ? '* ' : '  ';
+      const att = m.hasAttachments ? ' [att]' : '';
+      lines.push(
+        `${unread}${shortDate(m.receivedDateTime)}  ${m.from ?? ''}  ${m.subject ?? '(no subject)'}${att}`,
+      );
+      if (m.id) lines.push(`    id: ${m.id}`);
+    }
+  }
+  if (p.nextLink) lines.push(`  (more results — nextLink: ${p.nextLink})`);
+  return lines.join('\n');
+}
+
+function renderMessageFull(m: MessageFullShape): string {
+  const lines: string[] = [];
+  lines.push(`Subject: ${m.subject ?? '(no subject)'}`);
+  lines.push(`From:    ${m.from ?? '(unknown)'}`);
+  if (m.to.length > 0) lines.push(`To:      ${m.to.join(', ')}`);
+  if (m.cc.length > 0) lines.push(`Cc:      ${m.cc.join(', ')}`);
+  if (m.receivedDateTime) lines.push(`Date:    ${m.receivedDateTime}`);
+  if (m.importance && m.importance !== 'normal') {
+    lines.push(`Importance: ${m.importance}`);
+  }
+  lines.push('');
+  const body = m.body ?? '';
+  if (body.length > 4000) {
+    lines.push(body.slice(0, 4000));
+    lines.push('…(body truncated; use output: json for full text)');
+  } else {
+    lines.push(body);
+  }
+  if (m.webLink) {
+    lines.push('');
+    lines.push(`Open in Outlook: ${m.webLink}`);
+  }
+  return lines.join('\n');
+}
+
+function renderFolderList(p: FolderListShape): string {
+  const lines: string[] = [`Mail folders (${p.count})`];
+  if (p.count === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const f of p.folders) {
+      lines.push(
+        `  ${f.displayName ?? '(unnamed)'}  (${f.unreadItemCount}/${f.totalItemCount})  ${f.id ?? ''}`,
+      );
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderAttachmentList(p: AttachmentListShape): string {
+  const lines: string[] = [`Attachments (${p.count})`];
+  if (p.count === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const a of p.attachments) {
+      const inline = a.isInline ? ' (inline)' : '';
+      lines.push(
+        `  ${a.name ?? '(no-name)'}  ${a.size ?? 0}B  ${a.contentType ?? ''}${inline}`,
+      );
+      if (a.id) lines.push(`    id: ${a.id}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderDownloadResult(p: DownloadResultShape): string {
+  return `Wrote ${p.name} (${p.size} bytes) to ${p.path}`;
 }

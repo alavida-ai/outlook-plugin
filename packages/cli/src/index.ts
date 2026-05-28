@@ -12,10 +12,16 @@ import { eprintln, formatError } from './output.js';
 const TOP_HELP = `Usage: outlook <command> [args...]
 
 Commands:
-  auth login         Sign in via device-code flow.
-  auth logout        Clear cached tokens.
-  auth status        Show the signed-in account, if any.
-  whoami             Print the signed-in user's profile.
+  auth login                 Sign in via device-code flow.
+  auth logout                Clear cached tokens.
+  auth status                Show the signed-in account, if any.
+  whoami                     Print the signed-in user's profile.
+  mail list                  List messages in a folder.
+  mail read                  Read a single message.
+  mail search                Search across all folders (KQL).
+  mail folders               List mail folders.
+  mail attachments           List attachments on a message.
+  mail download-attachment   Save an attachment to disk.
 
 Global flags:
   --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
@@ -57,6 +63,35 @@ async function main(argv: string[]): Promise<number> {
   if (first === 'whoami') {
     const { run } = await import('./commands/whoami.js');
     return run([second, ...rest].filter((v): v is string => v !== undefined));
+  }
+
+  if (first === 'mail') {
+    if (second === 'list') {
+      const { run } = await import('./commands/mail-list.js');
+      return run(rest);
+    }
+    if (second === 'read') {
+      const { run } = await import('./commands/mail-read.js');
+      return run(rest);
+    }
+    if (second === 'search') {
+      const { run } = await import('./commands/mail-search.js');
+      return run(rest);
+    }
+    if (second === 'folders') {
+      const { run } = await import('./commands/mail-folders.js');
+      return run(rest);
+    }
+    if (second === 'attachments' || second === 'list-attachments') {
+      const { run } = await import('./commands/mail-attachments.js');
+      return run(rest);
+    }
+    if (second === 'download-attachment') {
+      const { run } = await import('./commands/mail-download-attachment.js');
+      return run(rest);
+    }
+    eprintln(`Unknown mail subcommand: ${second ?? '(none)'}.`);
+    return 1;
   }
 
   eprintln(`Unknown command: ${first}. Run \`outlook --help\`.`);
