@@ -1,8 +1,13 @@
-import type { AccountInfo, DeviceCodeResponse, PublicClientApplication } from '@azure/msal-node';
+import type { AccountInfo, DeviceCodeRequest, PublicClientApplication } from '@azure/msal-node';
 
 import type { TokenCache } from './cache.js';
 import { AuthRefreshFailedError } from './errors.js';
 import { OUTLOOK_SCOPES } from './msal.js';
+
+// @azure/msal-node does not re-export DeviceCodeResponse from msal-common; we
+// derive it from the callback signature on DeviceCodeRequest so we don't have
+// to take a direct dep on @azure/msal-common just for one type.
+type DeviceCodeResponse = Parameters<DeviceCodeRequest['deviceCodeCallback']>[0];
 
 export interface LoginDeviceCodeInput {
   app: PublicClientApplication;
