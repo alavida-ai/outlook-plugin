@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { closeSync, openSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -6,25 +7,45 @@ import {
   readFile,
   rename,
   rm,
+  stat,
+  unlink,
+  writeFile,
 } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
-import { AuthCacheCorruptError } from './errors.js';
+import { AuthCacheCorruptError, AuthLockTimeoutError } from './errors.js';
 import type { TokenCache } from './cache.js';
 
 const REQUIRED_KEYS = ['AccessToken', 'RefreshToken', 'IdToken', 'Account', 'AppMetadata'] as const;
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_LOCK_AGE_MS = 60_000;
+
+export interface LockOptions {
+  /** Total time to keep retrying lock acquisition. Default 30s. */
+  timeoutMs?: number;
+  /**
+   * If an existing lock file is older than this, presume the holder is dead
+   * and force-take it. Default 60s.
+   */
+  maxLockAgeMs?: number;
+}
 
 /**
  * Default `TokenCache` backend: a single JSON file at `path`, written
  * atomically (`tmpfile → fsync → rename`) with 0600 permissions and a
  * 0700 parent directory.
  *
- * Cross-process serialisation lives in Task 1.5 (`lock()` method). Until
- * then this implementation throws `Unsupported` on `lock()` calls so the
- * file-write tests can run cleanly.
+ * Cross-process serialisation via `O_EXCL` on `<path>.lock`. Exponential
+ * backoff to a 30s timeout; stale-lock detection at 60s.
  */
 export class FileTokenCache implements TokenCache {
   constructor(public readonly path: string) {}
+
+  get lockPath(): string {
+    return `${this.path}.lock`;
+  }
 
   async load(): Promise<string | null> {
     let raw: string;
@@ -67,15 +88,58 @@ export class FileTokenCache implements TokenCache {
     await rm(this.path, { force: true });
   }
 
-  // Real implementation lands in Task 1.5.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async lock<T>(_fn: () => Promise<T>): Promise<T> {
-    throw new Error('FileTokenCache.lock() not implemented yet (Task 1.5).');
+  async lock<T>(fn: () => Promise<T>, opts: LockOptions = {}): Promise<T> {
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const maxLockAgeMs = opts.maxLockAgeMs ?? DEFAULT_MAX_LOCK_AGE_MS;
+    const start = Date.now();
+    let attempt = 0;
+
+    while (true) {
+      try {
+        const fd = openSync(this.lockPath, 'wx', 0o600);
+        try {
+          await writeFile(this.lockPath, String(process.pid));
+        } finally {
+          closeSync(fd);
+        }
+        break; // lock acquired
+      } catch (err) {
+        if (!isEEXIST(err)) throw err;
+        // Lock exists. Check staleness.
+        try {
+          const st = await stat(this.lockPath);
+          const age = Date.now() - st.mtimeMs;
+          if (age > maxLockAgeMs) {
+            await unlink(this.lockPath).catch(() => {});
+            continue; // retry immediately
+          }
+        } catch (statErr) {
+          if (isENOENT(statErr)) continue; // gone between EEXIST and stat — retry
+          throw statErr;
+        }
+        if (Date.now() - start > timeoutMs) {
+          throw new AuthLockTimeoutError(timeoutMs);
+        }
+        const backoff = Math.min(250 * 2 ** attempt, 1_000);
+        attempt += 1;
+        await sleep(backoff);
+      }
+    }
+
+    try {
+      return await fn();
+    } finally {
+      await unlink(this.lockPath).catch(() => {});
+    }
   }
 }
 
 function isENOENT(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT';
+}
+
+function isEEXIST(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'EEXIST';
 }
 
 function isMsalShape(value: unknown): boolean {
