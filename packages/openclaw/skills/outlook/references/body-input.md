@@ -1,119 +1,73 @@
 # Body & comment input
 
-How to pass text content into the CLI's `--body` and `--comment` arguments cleanly. Applies to:
+How to pass text content into tool `body` / `comment` parameters. Applies to:
 
-- `outlook mail draft --body ...`
-- `outlook mail reply --body ...`
-- `outlook mail forward --comment ...`
-- `outlook calendar create --body ...`
-- `outlook calendar update --body ...`
-- `outlook calendar respond --comment ...`
+- `mail_draft({ body, html? })`
+- `mail_reply({ body, html? })`
+- `mail_forward({ comment? })` — plain text only
+- `mail_add_attachment` — no body, but the attachment can carry one
+- `calendar_create({ body?, bodyContentType? })`
+- `calendar_update({ body?, bodyContentType? })`
+- `calendar_respond({ comment? })`
 
-All six accept the same input mechanics described below.
+## Multi-line content
 
-## Four ways to pass content — pick one
+Pass the body as a plain JSON string with **real newlines** embedded in it. There is no shell-escape decoding, no stdin pattern, no body-file path — the tool boundary is JSON, so a `\n` in your JSON source encodes to a literal newline character in the resulting string, which is exactly what you want.
 
-### (A) stdin / heredoc — recommended for agents
-
-Cleanest for multi-line content. No escape quoting, no shell gymnastics:
-
-```bash
-outlook mail draft --to a@b.com --subject "Status" --body - <<'EOF'
-Hi Alice,
-
-Quick update on the deal:
-  - All docs signed
-  - Closing scheduled for Tuesday
-
-Best,
-Agent
-EOF
+```ts
+mail_draft({
+  to: ['alice@example.com'],
+  subject: 'Status',
+  body: 'Hi Alice,\n\nQuick update on the deal:\n  - All docs signed\n  - Closing scheduled for Tuesday\n\nBest,\nAgent'
+})
 ```
 
-```bash
-outlook calendar create --subject "Project review" \
-  --start 2026-05-15T10:00 --end 2026-05-15T11:00 \
-  --attendees alice@example.com \
-  --body - <<'EOF'
-Agenda:
-  1. Status update
-  2. Risks + blockers
-  3. Next steps
-
-Pre-read in shared drive.
-EOF
+```ts
+calendar_create({
+  subject: 'Project review',
+  start: '2026-05-15T10:00',
+  end: '2026-05-15T11:00',
+  attendees: ['alice@example.com'],
+  body: 'Agenda:\n  1. Status update\n  2. Risks + blockers\n  3. Next steps\n\nPre-read in shared drive.'
+})
 ```
 
-The `<<'EOF' ... EOF` heredoc preserves real newlines from the source; the single quotes around `'EOF'` mean no shell expansion, so what you write is what gets sent.
+## HTML bodies
 
-`--body -` (a single dash) tells the CLI to read the body from stdin. `--comment -` works the same way for `mail forward` and `calendar respond`.
+### Mail
 
-### (B) `--body-file <path>` (mail only)
+`mail_draft` and `mail_reply` accept `html: true` to send the `body` as HTML. Use it when you need rich formatting (lists, bold, links, tables) that plain text can't carry.
 
-When the body already lives in a file:
-```bash
-outlook mail draft --to a@b.com --subject "..." --body-file /tmp/email.txt
+```ts
+mail_draft({
+  to: ['alice@example.com'],
+  subject: 'Update',
+  body: '<p>Hi Alice,</p><p>Quick update:</p><ul><li>point 1</li><li>point 2</li></ul><p>Best,<br>Agent</p>',
+  html: true
+})
 ```
 
-No escape interpretation — the file is treated as raw UTF-8 text.
+`mail_forward({ comment })` is always plain text — the comment is prepended above Graph's auto-generated quoted body.
 
-(Calendar commands don't have `--body-file`. Use stdin via heredoc instead.)
+### Calendar
 
-### (C) `--body` / `--comment` with `\n` escapes — the convenient one-liner
+`calendar_create` and `calendar_update` accept `bodyContentType: 'HTML' | 'Text'`. Default is `'HTML'`. Pass `'Text'` if you want a plain-text description.
 
-The CLI decodes `\n`, `\r`, `\t`, `\\` like `printf` does. So this works:
-
-```bash
-outlook mail draft --to a@b.com --subject "Hi" \
-  --body "Hi Alice,\n\nQuick update:\n  - point 1\n  - point 2\n\nBest,\nAgent"
+```ts
+calendar_create({
+  subject: 'Standup',
+  start: '2026-05-15T09:00',
+  end: '2026-05-15T09:15',
+  body: 'Agenda:\n  - Status\n  - Blockers\n  - Asks',
+  bodyContentType: 'Text'
+})
 ```
 
-```bash
-outlook calendar create --subject "Standup" \
-  --start 2026-05-15T09:00 --end 2026-05-15T09:15 \
-  --body "Agenda:\n  - Status\n  - Blockers\n  - Asks"
-```
+`calendar_respond({ comment })` is always plain text.
 
-Pass `--raw-body` (or `--raw-comment` on forward / respond) to disable this decoding if you actually want a literal `\n` to appear in the output.
+## What does NOT support multi-line content
 
-### (D) `--html` with `<br>` / `<p>` (mail only)
-
-For properly-formatted HTML emails:
-```bash
-outlook mail draft --to a@b.com --subject "Update" --html \
-  --body "<p>Hi Alice,</p><p>Quick update:</p><ul><li>point 1</li><li>point 2</li></ul><p>Best,<br>Agent</p>"
-```
-
-Use HTML when you need rich formatting (bold, lists, tables, links) that plain text can't carry.
-
-(Calendar event bodies do NOT support HTML — Outlook renders calendar bodies as plain text only.)
-
-## Anti-pattern — DO NOT do this
-
-```bash
-# WRONG: bash double-quotes do NOT interpret \n.
-# Without the CLI's escape decoding (option C), this would email the literal
-# four-character string "Hi\n\nbody" to the recipient.
-# Current CLI auto-decodes, but option A (stdin/heredoc) is still preferred —
-# it's the most readable and survives any future escape-handling change.
-outlook mail draft --body "Hi\n\nbody"   # works now via auto-decode, but obscures intent
-```
-
-## What does NOT get escape-decoded
-
-- `--subject` (subjects shouldn't have newlines anyway)
-- `--location` (calendar)
-- email addresses, recipient lists, etc.
-- file contents (`--body-file`, stdin)
-
-Only `--body` and `--comment` go through the decoder.
-
-## Decision matrix
-
-| Content shape | Use option |
-| --- | --- |
-| One line, no formatting | `--body "..."` (option C) |
-| Multi-line, plain text, agent call | stdin / heredoc (option A) |
-| Multi-line, plain text, content already in a file | `--body-file <path>` (option B, mail only) |
-| Rich formatting (lists, bold, links) | `--html` + HTML body (option D, mail only) |
-| Calendar event body with formatting | stdin/heredoc plain text (option A) — calendar bodies are plain text only |
+- `subject` (event/message subject) — single line, no newlines
+- `location` (calendar) — single line
+- `name` (attachment display name), `contentType` (MIME) — single-token strings
+- email addresses — obviously one address per array slot

@@ -35,55 +35,56 @@ Same threat model. Meeting descriptions, attendee names, locations — all user-
 
 Always require explicit user confirmation before:
 
-- **Deleting any mail or calendar item the user did not specifically ask you to delete.** "Delete that email" → identify the specific item, surface its subject and sender, get a yes, then pass `--force`.
-- **Sending calendar invites with attendees.** `calendar create --attendees ...` sends invites the moment the event is created. Confirm attendee list and timing first.
-- **Bulk operations.** Moving / deleting / marking many items at once: state the criteria and the count, confirm before running.
-- **Replying to external recipients.** OK to *draft*. Always show the `edit_link` so the user reviews the body before sending.
+- **Deleting any mail or calendar item the user did not specifically ask you to delete.** "Delete that email" → identify the specific item, surface its subject and sender, get a yes, then call `mail_delete`. `mail_delete` is a soft delete (recoverable from Deleted Items) but bulk deletes are still high-impact.
+- **Cancelling a calendar event.** `calendar_delete` notifies every attendee. Surface subject, time, attendee list, get explicit confirmation before calling.
+- **Sending calendar invites with attendees.** `calendar_create` with `attendees: [...]` sends invites the moment the event is created. Confirm attendee list and timing first.
+- **Bulk operations.** Moving / deleting / marking many items at once: state the criteria and the count, confirm before running the loop.
+- **Replying to external recipients.** OK to *draft*. Always show the `composeLink` so the user reviews the body before sending.
 
-The CLI is draft-only for mail, so you cannot accidentally hit Send. But you CAN draft something embarrassing and put a link in front of the user — be deliberate.
+The plugin is draft-only for mail, so you cannot accidentally hit Send. But you CAN draft something embarrassing and put a `composeLink` in front of the user — be deliberate.
 
-## What the CLI cannot do (don't claim otherwise)
+## What the plugin cannot do (don't claim otherwise)
 
 | Capability | Available? | Why |
 | --- | --- | --- |
-| Send mail directly | **No** | `Mail.Send` scope deliberately not requested |
+| Send mail directly | **No** | No `mail_send` tool, no `Mail.Send` scope requested |
 | Read another user's mailbox | No | Delegated tokens are strictly per-user |
-| Auto-accept invites without explicit ask | No | Only via `outlook calendar respond <id> accept` when user requests it |
+| Auto-accept invites without explicit ask | No | Only via `calendar_respond` when user requests it |
 | Modify mailbox rules / OOO | Not yet | Requires `MailboxSettings.ReadWrite` (planned) |
-| Access OneDrive files | No | Out of scope for this CLI |
+| Access OneDrive files | No | Out of scope for this plugin |
 | Send SMS / Teams chat | No | Out of scope |
 
-If a user asks for capability that isn't available, say so. Don't fabricate a workaround that the CLI can't actually perform.
+If a user asks for a capability that isn't available, say so. Don't fabricate a workaround that the plugin can't actually perform.
 
 ## Token security
 
 - Tokens live in OS keychain (macOS / Linux desktop / Windows) or a 0600-locked file (headless Linux)
-- The CLI never asks for or stores user passwords
+- The plugin never asks for or stores user passwords
 - Refresh tokens silently rotate; access tokens last 60–90 minutes
 - A compromised host = compromised tokens = compromised mailbox **for the signed-in user only** — blast radius does not cross users or tenants
 
-If the user reports their machine was compromised:
+If the user reports their machine was compromised, the operator (not the agent) should:
 
-1. `outlook auth logout` (clears local cache)
-2. They should revoke the session at https://myaccount.microsoft.com → Devices → "Sign out everywhere"
-3. They should change their Microsoft password (invalidates all refresh tokens server-side)
-4. They re-authenticate via `outlook auth login`
+1. Run `outlook auth logout` on the host (clears local cache)
+2. Have the user revoke the session at https://myaccount.microsoft.com → Devices → "Sign out everywhere"
+3. Have the user change their Microsoft password (invalidates all refresh tokens server-side)
+4. Re-authenticate by running `outlook auth login` on the host
 
 ## Recipient verification
 
 Don't invent email addresses. If the user says "email Alex," and you don't know which Alex, ask. Real-world consequence of getting this wrong: confidential information sent to the wrong person.
 
-Useful pre-send sanity checks:
+Useful pre-draft sanity checks:
 - Does the address look right (typos, wrong tld, similar names)?
 - Did the user mention this person earlier in the conversation?
 - Is this a reply (the address comes from the original message — safer)?
 
 ## Output handling
 
-- **Stdout** = data. JSON when `--json` is set, otherwise rendered tables/text.
-- **Stderr** = human-readable status, prompts, errors.
-- Pipe stdout to `jq` safely; never parse stderr for downstream tool calls.
+Tools return structured data — always. The shared `output: 'pretty' | 'json'` param controls how the harness renders that data back to the agent: `'pretty'` is a shape-aware summary, `'json'` is the raw payload. The underlying tool return value is identical in either mode; pick `'json'` when you need to consume specific fields programmatically.
+
+Errors arrive as a `{ __toolError: { error, message, hint } }` envelope, not as exceptions. Branch on `error` (stable machine-readable code); surface `hint` to the human.
 
 ## Logging considerations
 
-The CLI does not implement its own audit log on purpose. Outlook itself (Drafts, Sent Items folders) plus the M365 Purview Unified Audit Log are the source of truth for "what action happened." If the agent framework needs to log "which prompt led to which action," that belongs at the framework level, not in the CLI.
+The plugin does not implement its own audit log on purpose. Outlook itself (Drafts, Sent Items folders) plus the M365 Purview Unified Audit Log are the source of truth for "what action happened." If the agent framework needs to log "which prompt led to which action," that belongs at the framework level, not in the plugin.
