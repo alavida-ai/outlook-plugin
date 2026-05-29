@@ -1,6 +1,6 @@
 {
   "name": "@alavida-ai/outlook-plugin-openclaw",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "OpenClaw plugin: native tools for reading mail, drafting messages, and managing calendar via Microsoft Graph.",
   "type": "module",
   "license": "UNLICENSED",
@@ -36,7 +36,9 @@
     "openclaw": "2026.5.12"
   },
   "openclaw": {
-    "extensions": ["./dist/index.js"],
+    "extensions": [
+      "./dist/index.js"
+    ],
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2",
       "minGatewayVersion": "2026.3.24-beta.2"
@@ -46,5 +48,7 @@
       "pluginSdkVersion": "2026.3.24-beta.2"
     }
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
