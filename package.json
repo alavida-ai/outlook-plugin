@@ -1,13 +1,13 @@
 {
-  "name": "outlook-cli",
+  "name": "outlook-plugin",
   "version": "0.0.0",
   "private": true,
   "description": "TypeScript monorepo for the Alavida Outlook plugin — CLI + OpenClaw + Claude Code skill for reading and triaging mail/calendar via Microsoft Graph.",
   "license": "UNLICENSED",
-  "homepage": "https://github.com/alavida-ai/outlook-cli",
+  "homepage": "https://github.com/alavida-ai/outlook-plugin",
   "repository": {
     "type": "git",
-    "url": "https://github.com/alavida-ai/outlook-cli.git"
+    "url": "https://github.com/alavida-ai/outlook-plugin.git"
   },
   "engines": {
     "node": ">=20",

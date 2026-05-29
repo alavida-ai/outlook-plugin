@@ -1,4 +1,4 @@
-# outlook-cli
+# outlook-plugin
 
 Alavida's TypeScript monorepo for Microsoft Outlook — mail, calendar, contacts via Microsoft Graph, designed for AI agents.
 
@@ -14,12 +14,12 @@ Draft-only mail (no send), delegated permissions only, OS-keychain-free file tok
 
 ## Status
 
-TypeScript port of the original Python `outlook-cli`. Foundation + 23 tools shipped (whoami, mail-read/write/triage, calendar, contacts stub). At parity with the Python CLI's surface. See [PLAN.md history in git](https://github.com/alavida-ai/outlook-cli/commits/main) for the slice-by-slice rollout. Agent-facing reference at [packages/openclaw/skills/outlook/SKILL.md](packages/openclaw/skills/outlook/SKILL.md).
+TypeScript port of the original Python `outlook-cli`. Foundation + 23 tools shipped (whoami, mail-read/write/triage, calendar, contacts stub). At parity with the Python CLI's surface. See [commit history](https://github.com/alavida-ai/outlook-plugin/commits/main) for the slice-by-slice rollout. Agent-facing reference at [packages/openclaw/skills/outlook/SKILL.md](packages/openclaw/skills/outlook/SKILL.md).
 
 ## Architecture
 
 ```
-outlook-cli/
+outlook-plugin/
 ├── package.json                              # workspace root, pinned pnpm@11.1.2
 ├── pnpm-workspace.yaml                       # supply-chain hardening
 ├── scripts/check-pnpm.mjs                    # preinstall guard

@@ -54,4 +54,4 @@ Run `outlook <command> --help` for per-command flags. Every command supports `--
 
 ## Source
 
-https://github.com/alavida-ai/outlook-cli
+https://github.com/alavida-ai/outlook-plugin

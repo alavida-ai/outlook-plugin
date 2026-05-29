@@ -1,8 +1,8 @@
 ---
 name: outlook
 description: Microsoft Outlook (Office 365) — read mail, draft replies, search inbox, manage calendar events, schedule meetings, check team availability. Use whenever the user asks about their email or calendar.
-homepage: https://github.com/alavida-ai/outlook-cli
-metadata: {"openclaw":{"emoji":"📬","homepage":"https://github.com/alavida-ai/outlook-cli","os":["darwin","linux"],"requires":{"bins":["outlook"]}}}
+homepage: https://github.com/alavida-ai/outlook-plugin
+metadata: {"openclaw":{"emoji":"📬","homepage":"https://github.com/alavida-ai/outlook-plugin","os":["darwin","linux"],"requires":{"bins":["outlook"]}}}
 ---
 
 # Outlook

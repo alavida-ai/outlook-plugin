@@ -79,4 +79,4 @@ Every tool inherits shared `output: 'pretty' \| 'json'` and `help: boolean` para
 
 ## Source
 
-https://github.com/alavida-ai/outlook-cli
+https://github.com/alavida-ai/outlook-plugin
