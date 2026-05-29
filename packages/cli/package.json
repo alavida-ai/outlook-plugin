@@ -1,11 +1,16 @@
 {
   "name": "@alavida-ai/outlook-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Alavida Outlook CLI — read mail, draft messages, manage calendar via Microsoft Graph.",
   "type": "module",
   "license": "UNLICENSED",
-  "bin": { "outlook": "dist/index.js" },
-  "files": ["dist", "README.md"],
+  "bin": {
+    "outlook": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "restricted"
@@ -17,5 +22,7 @@
   "dependencies": {
     "@alavida-ai/outlook-core": "workspace:*"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
