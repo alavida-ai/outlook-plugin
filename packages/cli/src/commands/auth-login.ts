@@ -10,7 +10,7 @@ Run the Microsoft device-code flow and cache the resulting tokens.
 
   - URL + code are printed to STDERR on the first line. Forward those
     to a human and wait for sign-in to complete.
-  - Tokens are cached at ~/.outlook-cli/tokens.json (0600) — set
+  - Tokens are cached at ~/.outlook-plugin/tokens.json (0600) — set
     OUTLOOK_TOKEN_CACHE to override.
   - With --json, the result is emitted to stdout as
     { "account": "<upn>" }.

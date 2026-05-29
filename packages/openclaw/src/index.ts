@@ -81,7 +81,7 @@ const configJsonSchema: any = Type.Object({
   ),
   tokenCachePath: Type.Optional(
     Type.String({
-      description: 'Path to the MSAL token cache. Defaults to ~/.outlook-cli/tokens.json.',
+      description: 'Path to the MSAL token cache. Defaults to ~/.outlook-plugin/tokens.json.',
     }),
   ),
   account: Type.Optional(

@@ -24,7 +24,7 @@ outlook auth login   # device-code → URL + code on stderr → sign in on any d
 outlook whoami       # verify
 ```
 
-Tokens cache to `~/.outlook-cli/tokens.json` (0600). Refresh tokens auto-renew; re-login only needed on password change, admin consent revocation, or ~90 days idle.
+Tokens cache to `~/.outlook-plugin/tokens.json` (0600). Refresh tokens auto-renew; re-login only needed on password change, admin consent revocation, or ~90 days idle.
 
 ## Commands
 
@@ -50,7 +50,7 @@ Run `outlook <command> --help` for per-command flags. Every command supports `--
 - `AZURE_CLIENT_ID` — override the embedded Entra app id
 - `AZURE_TENANT_ID` — override the default tenant (`common`)
 - `OUTLOOK_ACCOUNT` — default UPN to use when multiple accounts cached
-- `OUTLOOK_TOKEN_CACHE` — override `~/.outlook-cli/tokens.json`
+- `OUTLOOK_TOKEN_CACHE` — override `~/.outlook-plugin/tokens.json`
 
 ## Source
 

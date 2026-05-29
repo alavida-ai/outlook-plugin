@@ -65,7 +65,7 @@ Same scope set as the Python implementation; users migrating from Python don't r
 
 Embedded multi-tenant Entra app — same client id as the Python implementation (`18f9e6ff-2b0a-423e-bb35-ab9b541e604e`), `common` authority. End users sign in once via device-code, refresh tokens renew silently from then on.
 
-**Token cache** lives at `~/.outlook-cli/tokens.json` (0600), atomic writes via tmpfile + `fsync` + `rename`, cross-process refresh lock via `O_EXCL` on `tokens.json.lock`. Six typed `AuthError` variants surface via every CLI command and OpenClaw tool with a `nextStep` field pointing the user at the right command.
+**Token cache** lives at `~/.outlook-plugin/tokens.json` (0600), atomic writes via tmpfile + `fsync` + `rename`, cross-process refresh lock via `O_EXCL` on `tokens.json.lock`. Six typed `AuthError` variants surface via every CLI command and OpenClaw tool with a `nextStep` field pointing the user at the right command.
 
 Override the embedded app id via env vars (e.g. a client running their own Entra app):
 
@@ -129,7 +129,7 @@ openclaw gateway restart
 openclaw plugins inspect outlook
 ```
 
-First-time setup requires running `outlook auth login` once on the OpenClaw host to populate the token cache. The plugin reads `~/.outlook-cli/tokens.json` directly.
+First-time setup requires running `outlook auth login` once on the OpenClaw host to populate the token cache. The plugin reads `~/.outlook-plugin/tokens.json` directly.
 
 The bundled skill (`packages/openclaw/skills/outlook/`) is shipped inside the plugin tarball via the `skills` field in `openclaw.plugin.json`.
 
