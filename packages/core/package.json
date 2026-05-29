@@ -1,12 +1,15 @@
 {
   "name": "@alavida-ai/outlook-core",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Microsoft Graph wrapper + MSAL device-code auth for Alavida's Outlook stack. Pure library — no stdout/stderr, no process.exit.",
   "type": "module",
   "license": "UNLICENSED",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "restricted"
@@ -20,5 +23,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@microsoft/microsoft-graph-types": "^2.40.0"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
