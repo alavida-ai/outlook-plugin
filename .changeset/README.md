@@ -14,7 +14,7 @@ The CLI asks which packages changed and at what semver level (major / minor / pa
 
 ## How releases happen
 
-1. PR merges to `main` (or `typescript-rewrite` during the in-flight TS migration) with a changeset file.
+1. PR merges to `main` with a changeset file.
 2. The Release workflow (`.github/workflows/release.yml`) sees pending changesets and opens (or updates) a "Version Packages" PR that bumps versions and rewrites `CHANGELOG.md` per package.
 3. When that PR is merged, the workflow runs `pnpm build && changeset publish` — every package whose version was just bumped is published to GitHub Packages (`@alavida-ai/*` scope).
 

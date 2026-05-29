@@ -1,20 +1,18 @@
 name: Release
 
 # Changesets-driven release flow:
-#   1. PR merges to main (or typescript-rewrite for the in-flight TS migration)
-#      with a .changeset/*.md file.
+#   1. PR merges to main with a .changeset/*.md file.
 #   2. This workflow sees pending changesets and opens a "Version Packages" PR
 #      that bumps versions and rewrites CHANGELOG.md for each package.
 #   3. When that PR is merged, this workflow runs again and publishes every
 #      package whose version was just bumped to GitHub Packages.
 #
 # Also exposes workflow_dispatch so a maintainer can trigger a manual publish
-# from the GitHub Actions UI — used for the initial v0.1.0 release before any
-# changesets exist.
+# from the GitHub Actions UI — used for one-off emergency re-publishes.
 
 on:
   push:
-    branches: [main, typescript-rewrite]
+    branches: [main]
   workflow_dispatch:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
