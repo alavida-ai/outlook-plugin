@@ -81,7 +81,7 @@ Useful pre-draft sanity checks:
 
 ## Output handling
 
-Tools return structured data — always. The shared `output: 'pretty' | 'json'` param controls how the harness renders that data back to the agent: `'pretty'` is a shape-aware summary, `'json'` is the raw payload. The underlying tool return value is identical in either mode; pick `'json'` when you need to consume specific fields programmatically.
+Tools return structured data — always. The shared `output: 'pretty' | 'json'` param controls how the harness renders that data back to you: `'pretty'` is the **token-efficient** shape-aware summary (default; saves context), `'json'` is the **more detailed** raw payload (every field, no truncation). The underlying tool return value is identical in either mode; default to `pretty`, escalate to `json` only when you need a field `pretty` left out.
 
 Errors arrive as a `{ __toolError: { error, message, hint } }` envelope, not as exceptions. Branch on `error` (stable machine-readable code); surface `hint` to the human.
 

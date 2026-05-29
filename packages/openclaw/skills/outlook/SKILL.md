@@ -42,7 +42,7 @@ calendar_availability({ emails: ['a@b.com'], days: 5 })                    // fr
 ```
 
 Every tool accepts two shared params from the OpenClaw harness:
-- `output: 'pretty' | 'json'` (default `'pretty'`) — `'pretty'` is a shape-aware human-readable summary; `'json'` is the raw structured payload. Tool *return values* are always structured — `output` only controls how the harness renders them back to the agent.
+- `output: 'pretty' | 'json'` (default `'pretty'`) — controls how the harness renders the result back to you. `'pretty'` is the **token-efficient** shape-aware summary (use it by default — fewer tokens, easier to skim). `'json'` is the **more detailed** raw structured payload (use it when you need specific fields programmatically). The underlying tool return value is identical in either mode; only the rendering differs.
 - `help: true` — short-circuit to the auto-generated manpage for that tool.
 
 ## Critical rules (full detail in safety.md — read it)
@@ -55,10 +55,10 @@ Every tool accepts two shared params from the OpenClaw harness:
 
 ## Output contract
 
-Tools always return structured data — typed JSON objects matching each tool's documented return shape. The shared `output` param only controls how the harness renders that result to the agent:
+Tools always return structured data — typed JSON objects matching each tool's documented return shape. The shared `output` param only controls how the harness renders that result to you:
 
-- `output: 'pretty'` (default) — shape-detected human-readable summary (tables for lists, key/value blocks for single items).
-- `output: 'json'` — the raw structured payload, ready for the agent to consume programmatically.
+- `output: 'pretty'` (default) — **token-efficient.** Shape-detected human-readable summary (compact tables for lists, key/value blocks for single items, body snippets truncated). Use this by default — it's cheap on context.
+- `output: 'json'` — **more detailed.** The raw structured payload with every field. Use this only when you need to consume specific fields programmatically or when `pretty` truncated something you need.
 
 List tools use an envelope: `{ messages: [...], count: N, nextLink: "..." }` (or `events`, `folders`, `attachments` for other surfaces). Single-item tools return a bare object.
 

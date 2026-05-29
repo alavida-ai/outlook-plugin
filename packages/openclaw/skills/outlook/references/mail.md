@@ -195,4 +195,4 @@ const msg = await mail_read({ messageId: list.messages[0].id, preferText: true }
 
 ## Return-shape stability for tool chaining
 
-Tool return values are typed and stable. The shared `output` param controls how the harness *renders* the result back to the agent (`pretty` summary vs raw `json`), not the underlying shape — list tools always carry `{ messages | events | folders | attachments, count, nextLink }`; single-item tools carry the typed object directly; errors come back as a `{ __toolError: {...} }` envelope.
+Tool return values are typed and stable. The shared `output` param controls how the harness *renders* the result back to you — `'pretty'` is the token-efficient summary (default; cheap on context); `'json'` is the more detailed raw payload (use when `pretty` truncated a field you need, e.g. the full body of a long email). The underlying shape is identical either way: list tools always carry `{ messages | events | folders | attachments, count, nextLink }`; single-item tools carry the typed object directly; errors come back as a `{ __toolError: {...} }` envelope.
