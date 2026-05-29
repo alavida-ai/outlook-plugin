@@ -28,11 +28,9 @@ export function resolveUpn(accountFlag: string | undefined): string | undefined 
   return env ? env : undefined;
 }
 
-/** Resolve the default token-cache path: $OUTLOOK_TOKEN_CACHE > ~/.outlook-cli/tokens.json */
+/** Resolve the default token-cache path: $OUTLOOK_TOKEN_CACHE > ~/.outlook-plugin/tokens.json */
 export function defaultCachePath(): string {
-  const override = process.env.OUTLOOK_TOKEN_CACHE;
-  if (override) return override;
-  return join(homedir(), '.outlook-cli', 'tokens.json');
+  return process.env.OUTLOOK_TOKEN_CACHE ?? join(homedir(), '.outlook-plugin', 'tokens.json');
 }
 
 export interface MakeContextOptions {

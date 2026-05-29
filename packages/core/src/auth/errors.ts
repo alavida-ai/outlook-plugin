@@ -66,7 +66,7 @@ export class AuthLockTimeoutError extends AuthError {
   constructor(timeoutMs: number) {
     super(
       `Couldn't acquire token-cache refresh lock within ${timeoutMs} ms.`,
-      'Another process is mid-refresh; wait a few seconds and retry, or delete `~/.outlook-cli/tokens.lock` if no other process is using it.',
+      'Another process is mid-refresh; wait a few seconds and retry, or delete `~/.outlook-plugin/tokens.lock` if no other process is using it.',
     );
   }
 }

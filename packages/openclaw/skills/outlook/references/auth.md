@@ -36,7 +36,7 @@ The agent's job is to **surface `hint` to the human** and stop. Do not retry; do
 | `auth_refresh_failed` | Silent refresh rejected (password change, revoked consent, conditional-access re-eval) | Run `outlook auth login` |
 | `auth_interaction_required` | Microsoft requires interactive sign-in (MFA prompt, etc.) | Run `outlook auth login` |
 | `auth_ambiguous_account` | Multiple cached accounts, none selected | Pin `account: '<upn>'` in plugin config (see below) |
-| `auth_lock_timeout` | Another process holds the token-cache refresh lock | Wait a few seconds and retry; if persistent, the operator can delete `~/.outlook-cli/tokens.lock` |
+| `auth_lock_timeout` | Another process holds the token-cache refresh lock | Wait a few seconds and retry; if persistent, the operator can delete `~/.outlook-plugin/tokens.lock` |
 
 `auth_ambiguous_account` includes the cached UPNs in the envelope's `accounts` field — surface that list to the user so they (or the operator) know which accounts are available.
 
@@ -92,7 +92,7 @@ Clears tokens from OS keychain + file fallback. The next tool call returns `auth
 | macOS | Keychain | Native, no setup |
 | Linux desktop | Secret Service (libsecret) | Requires GNOME Keyring or KDE Wallet |
 | Windows | Credential Manager | Native, no setup |
-| Headless Linux (e.g. VPS) | File at `~/.outlook-cli/tokens.json` | 0600 perms, parent dir 0700 |
+| Headless Linux (e.g. VPS) | File at `~/.outlook-plugin/tokens.json` | 0600 perms, parent dir 0700 |
 
 The CLI tries the OS keychain first; if none is available, it falls back to the encrypted-at-rest file. Neither the CLI nor the plugin ever asks for or stores Microsoft passwords — only access + refresh tokens issued by Microsoft via OAuth.
 

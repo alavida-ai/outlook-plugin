@@ -21,7 +21,7 @@ openclaw plugins inspect outlook   # confirm "Format: openclaw" + tool list
 
 ## First-time auth (per user, per host)
 
-The plugin reads MSAL tokens from `~/.outlook-cli/tokens.json`. To populate that cache on the OpenClaw host, install the matching CLI and run device-code sign-in once:
+The plugin reads MSAL tokens from `~/.outlook-plugin/tokens.json`. To populate that cache on the OpenClaw host, install the matching CLI and run device-code sign-in once:
 
 ```bash
 npm install -g @alavida-ai/outlook-cli

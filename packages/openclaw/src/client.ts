@@ -16,7 +16,7 @@ export interface PluginConfig {
 }
 
 function defaultCachePath(): string {
-  return process.env.OUTLOOK_TOKEN_CACHE ?? join(homedir(), '.outlook-cli', 'tokens.json');
+  return process.env.OUTLOOK_TOKEN_CACHE ?? join(homedir(), '.outlook-plugin', 'tokens.json');
 }
 
 let cachedClient: { config: PluginConfig; client: OutlookClient } | null = null;

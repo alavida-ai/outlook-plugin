@@ -46,7 +46,7 @@
       },
       "tokenCachePath": {
         "type": "string",
-        "description": "Path to the MSAL token cache. Defaults to ~/.outlook-cli/tokens.json."
+        "description": "Path to the MSAL token cache. Defaults to ~/.outlook-plugin/tokens.json."
       },
       "account": {
         "type": "string",

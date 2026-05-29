@@ -7,7 +7,7 @@ Consumed by:
 - [`@alavida-ai/outlook-cli`](https://github.com/alavida-ai/outlook-plugin/tree/main/packages/cli) — the `outlook` terminal binary
 - [`@alavida-ai/outlook-plugin-openclaw`](https://github.com/alavida-ai/outlook-plugin/tree/main/packages/openclaw) — the OpenClaw plugin
 
-Both share the same token cache (`~/.outlook-cli/tokens.json` by default) — sign in via either, the other picks it up.
+Both share the same token cache (`~/.outlook-plugin/tokens.json` by default) — sign in via either, the other picks it up.
 
 ## Public surface
 
