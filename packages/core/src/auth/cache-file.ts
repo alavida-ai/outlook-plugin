@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { closeSync, openSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -93,6 +93,17 @@ export class FileTokenCache implements TokenCache {
     const maxLockAgeMs = opts.maxLockAgeMs ?? DEFAULT_MAX_LOCK_AGE_MS;
     const start = Date.now();
     let attempt = 0;
+
+    // Ensure parent dir exists before O_EXCL create. Otherwise the first-ever
+    // lock attempt on a fresh install fails with ENOENT (the parent dir is
+    // normally created by save(), but loginDeviceCode acquires the lock
+    // BEFORE the cache plugin's afterCacheAccess fires).
+    //
+    // Synchronous mkdir so the function doesn't yield to the event loop
+    // before the openSync — keeps the "first caller wins openSync" property
+    // that concurrent callers rely on.
+    const dir = dirname(this.path);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
 
     while (true) {
       try {
