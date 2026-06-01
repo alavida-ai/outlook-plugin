@@ -26,6 +26,18 @@ describe('FileTokenCache.lock()', () => {
     await expect(cache.lock(async () => 'again')).resolves.toBe('again');
   });
 
+  it('regression: lock() succeeds when the parent directory does not exist yet', async () => {
+    // First-ever auth login on a fresh host: ~/.outlook-plugin/ doesn't exist.
+    // loginDeviceCode calls cache.lock() before any save() has created the dir.
+    // lock() must mkdir the parent before O_EXCL-creating the lock file,
+    // otherwise it fails with ENOENT.
+    const freshCache = new FileTokenCache(join(dir, 'nested', 'deeper', 'tokens.json'));
+    const result = await freshCache.lock(async () => 'ok');
+    expect(result).toBe('ok');
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(dir, 'nested', 'deeper'))).toBe(true);
+  });
+
   it('releases the lock when the critical section throws', async () => {
     await expect(cache.lock(async () => { throw new Error('boom'); })).rejects.toThrow('boom');
     await expect(cache.lock(async () => 'after')).resolves.toBe('after');
