@@ -1,48 +1,90 @@
 # Auth
 
-The agent never authenticates the user itself. Auth is a **one-time host-side setup** the operator performs on the OpenClaw host before the agent ever runs.
+Each agent maintains its own Outlook identity. The plugin keeps a separate
+token cache per agent (at `<agentDir>/outlook-tokens.json`), so two agents
+on the same OpenClaw gateway can sign in as two different Microsoft users
+without crossing wires.
 
-## One-time host-side login (operator action)
+## Authenticating an agent (from inside the session)
 
-```bash
-outlook auth login
+Call `outlook.auth_login` from the agent. The tool returns **immediately**
+with a verification URL and a 6-character user code — it does **not** block
+for sign-in:
+
+```jsonc
+{
+  "status": "pending",
+  "verificationUrl": "https://microsoft.com/devicelogin",
+  "userCode": "ABCD1234",
+  "expiresAt": "2026-06-01T12:15:00Z",
+  "agentId": "alfred",
+  "cachePath": "/.../agents/alfred/agent/outlook-tokens.json",
+  "hint": "Open the URL on any device, enter the code, sign in. Then call outlook.auth_status to confirm."
+}
 ```
 
-What happens, step by step:
+Surface `verificationUrl` and `userCode` to the human. The human signs in
+on any device (phone is fine), enters the code, and authorises sign-in.
+Polling Microsoft happens in the background; once the human confirms
+sign-in is done, call `outlook.auth_status` to verify the token landed.
 
-1. CLI hits Microsoft's `/devicecode` endpoint, gets a short URL + 6-character user code (~200 ms)
-2. **Prints URL + code to stderr**, then blocks polling Microsoft every ~5 seconds for up to 15 minutes
-3. The operator (or end-user) opens the URL on any device (phone is fine), enters the code, signs in with normal Microsoft credentials (MFA if enforced)
-4. CLI unblocks, caches tokens to OS keychain (or 0600 file fallback), exits 0
+```jsonc
+{
+  "status": "authenticated",
+  "upn": "alice@example.com",
+  "displayName": "Alice Smith",
+  "agentId": "alfred",
+  "cachePath": "/.../agents/alfred/agent/outlook-tokens.json"
+}
+```
 
-After that, every OpenClaw tool call silently uses the cached tokens.
+If `auth_status` still returns `not_authenticated` after the human says
+sign-in is done, either the human hasn't actually completed the flow (ask
+them to try again — codes expire after ~15 min) or Microsoft rejected the
+sign-in. Surface the failure and ask them to retry `outlook.auth_login`.
 
-## Agent's role: surface, don't retry
+## Logging out
 
-Tools never spawn `outlook auth login`. When an auth-time failure happens, the agent gets a structured error envelope:
+```text
+outlook.auth_logout
+```
+
+Clears this agent's token cache. The next tool call returns
+`auth_cache_missing` until `outlook.auth_login` runs again. The cache for
+any other agent on the same gateway is untouched.
+
+## When tools fail with an auth error
+
+Every Outlook tool returns a structured error envelope if auth is missing
+or stale:
 
 ```json
 { "__toolError": { "error": "<code>", "message": "...", "hint": "..." } }
 ```
 
-The agent's job is to **surface `hint` to the human** and stop. Do not retry; do not attempt a workaround. The operator must run `outlook auth login` on the host to recover.
+The agent's job is to **surface `hint` to the human** and either retry
+after they've re-authed or stop. Don't loop on auth errors.
 
 ### Auth error taxonomy
 
-| `error` code | Meaning | Operator action |
+| `error` code | Meaning | Recovery |
 | --- | --- | --- |
-| `auth_cache_missing` | No cached account on this host | Run `outlook auth login` |
-| `auth_cache_corrupt` | Token cache unreadable | Run `outlook auth logout` then `outlook auth login` |
-| `auth_refresh_failed` | Silent refresh rejected (password change, revoked consent, conditional-access re-eval) | Run `outlook auth login` |
-| `auth_interaction_required` | Microsoft requires interactive sign-in (MFA prompt, etc.) | Run `outlook auth login` |
-| `auth_ambiguous_account` | Multiple cached accounts, none selected | Pin `account: '<upn>'` in plugin config (see below) |
-| `auth_lock_timeout` | Another process holds the token-cache refresh lock | Wait a few seconds and retry; if persistent, the operator can delete `~/.outlook-plugin/tokens.lock` |
+| `auth_cache_missing` | No cached account for this agent | Call `outlook.auth_login` |
+| `auth_cache_corrupt` | Token cache unreadable | Call `outlook.auth_logout` then `outlook.auth_login` |
+| `auth_refresh_failed` | Silent refresh rejected (password change, revoked consent, conditional-access re-eval) | Call `outlook.auth_login` |
+| `auth_interaction_required` | Microsoft requires interactive sign-in (MFA prompt, etc.) | Call `outlook.auth_login` |
+| `auth_ambiguous_account` | Multiple accounts cached, none selected | Pin `account: '<upn>'` in plugin config (see below) |
+| `auth_lock_timeout` | Another process holds the token-cache refresh lock | Wait a few seconds and retry; if persistent, call `outlook.auth_logout` and `outlook.auth_login` |
 
-`auth_ambiguous_account` includes the cached UPNs in the envelope's `accounts` field — surface that list to the user so they (or the operator) know which accounts are available.
+`auth_ambiguous_account` includes the cached UPNs in the envelope's
+`accounts` field — surface that list so the operator knows which accounts
+are available.
 
 ## Account selection (operator config, not per-call)
 
-The agent does **not** pick the account at call time. Account pinning is plugin configuration the operator sets once in `~/.openclaw/openclaw.json`:
+The agent does **not** pick the account at call time. Account pinning is
+plugin configuration the operator sets once in
+`~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -54,20 +96,29 @@ The agent does **not** pick the account at call time. Account pinning is plugin 
 }
 ```
 
-When only one account is cached, this field is optional. When multiple accounts are cached and `account` is unset, tools throw `auth_ambiguous_account`.
+When only one account is cached, this field is optional. When multiple
+accounts are cached and `account` is unset, tools throw
+`auth_ambiguous_account`.
 
-## Detecting auth state (operator use)
+## Multi-agent isolation
 
-```bash
-outlook auth status                # exits 0 if cached account exists, 1 if not
-outlook whoami                     # exits 1 with a friendly stderr message if not authed
-```
+On a multi-agent OpenClaw gateway (`alfred`, `baerbel`, …), each agent's
+token cache lives at `<agentDir>/outlook-tokens.json` (e.g.
+`~/.openclaw/agents/alfred/agent/outlook-tokens.json`). The cache file is
+`0600`. Tools running inside `alfred`'s session never see `baerbel`'s
+tokens.
 
-These are CLI commands the operator runs on the host — the agent doesn't call them. The agent simply waits for any tool to throw `auth_cache_missing` (or another `auth_*` code) and surfaces the hint.
+`outlook.auth_login` from inside `alfred` writes to `alfred`'s cache only.
+`outlook.auth_logout` from inside `alfred` deletes `alfred`'s cache only.
+
+If the operator overrides `tokenCachePath` in plugin config, all agents
+share that single file — only useful for single-agent hosts.
 
 ## Re-auth triggers
 
-Tokens silently refresh forever, except in these cases — all of which surface as `auth_refresh_failed` or `auth_interaction_required` for the agent, and require an operator-side `outlook auth login`:
+Tokens silently refresh forever, except in these cases — all of which
+surface as `auth_refresh_failed` or `auth_interaction_required`, and
+require the agent to call `outlook.auth_login` again:
 
 - **Password change** → all refresh tokens invalidated server-side
 - **Admin consent revocation** → same
@@ -75,41 +126,35 @@ Tokens silently refresh forever, except in these cases — all of which surface 
 - **Conditional Access re-evaluation** → may force re-login
 - **User signs out at https://myaccount.microsoft.com** → tokens invalidated
 
-These are uncommon. Default assumption: once the operator authed, the tools stay authed.
+These are uncommon. Default assumption: once an agent has authed, it stays
+authed.
 
-## Logout (operator action)
+## CLI authentication (host operator only)
+
+The host operator can also run `outlook auth login` from the terminal. The
+CLI uses a **separate** cache at `~/.outlook-plugin/tokens.json`, isolated
+from any agent's cache. Running `outlook auth login` does **not**
+authenticate any OpenClaw agent — the agent must call its own
+`outlook.auth_login` tool.
 
 ```bash
-outlook auth logout
+outlook auth login                 # CLI auth (host-side, separate from agents)
+outlook auth status                # CLI status
+outlook auth logout                # CLI logout
+outlook whoami                     # CLI: who am I (CLI cache only)
 ```
 
-Clears tokens from OS keychain + file fallback. The next tool call returns `auth_cache_missing` until the operator runs `outlook auth login` again.
+This is a deliberate posture: the CLI is for the human host operator
+(debugging, status checks); the plugin tools are for agents.
 
 ## Token storage
 
 | Platform | Backend | Notes |
 | --- | --- | --- |
-| macOS | Keychain | Native, no setup |
-| Linux desktop | Secret Service (libsecret) | Requires GNOME Keyring or KDE Wallet |
-| Windows | Credential Manager | Native, no setup |
-| Headless Linux (e.g. VPS) | File at `~/.outlook-plugin/tokens.json` | 0600 perms, parent dir 0700 |
+| macOS | File (`0600`) | OS keychain support is future work |
+| Linux | File (`0600`) | OS keychain support is future work |
+| Windows | File (`0600`) | OS keychain support is future work |
 
-The CLI tries the OS keychain first; if none is available, it falls back to the encrypted-at-rest file. Neither the CLI nor the plugin ever asks for or stores Microsoft passwords — only access + refresh tokens issued by Microsoft via OAuth.
-
-## Re-triggering auth from an unusual context
-
-If the agent runs in an environment where it must hand off auth setup to a remote user (e.g. provisioning a new user mid-conversation), spawn the CLI as a subprocess on the host and forward the first line of stderr — that carries the URL + code:
-
-```python
-import subprocess
-proc = subprocess.Popen(
-    ['outlook', 'auth', 'login'],
-    stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True,
-)
-url_line = proc.stderr.readline()
-# url_line: "To sign in, use a web browser to open ... and enter the code ABCD1234 ..."
-send_to_user_via_preferred_channel(url_line)
-returncode = proc.wait()  # blocks up to 15 min
-```
-
-This is the **exception path**, not the default. The default is: operator runs `outlook auth login` once at host setup time, agent never thinks about auth again.
+The cache file is `0600`, the parent directory is `0700`. Neither the CLI
+nor the plugin ever asks for or stores Microsoft passwords — only access +
+refresh tokens issued by Microsoft via OAuth.

@@ -28,6 +28,13 @@ export type { AccessTokenResult, GetAccessTokenInput } from './auth/silent.js';
 export { loginDeviceCode } from './auth/device-code.js';
 export type { LoginDeviceCodeInput, LoginResult } from './auth/device-code.js';
 
+export { loginDeviceCodeInBackground } from './auth/device-code-background.js';
+export type {
+  LoginDeviceCodeBackgroundInput,
+  BackgroundDeviceCodeResult,
+  BackgroundDeviceCodeCompletion,
+} from './auth/device-code-background.js';
+
 export { logout } from './auth/logout.js';
 export type { LogoutInput } from './auth/logout.js';
 

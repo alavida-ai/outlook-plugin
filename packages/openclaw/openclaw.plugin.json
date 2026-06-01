@@ -5,6 +5,9 @@
   "skills": ["./skills"],
   "contracts": {
     "tools": [
+      "auth_login",
+      "auth_status",
+      "auth_logout",
       "whoami",
       "mail_list",
       "mail_read",
@@ -46,7 +49,7 @@
       },
       "tokenCachePath": {
         "type": "string",
-        "description": "Path to the MSAL token cache. Defaults to ~/.outlook-plugin/tokens.json."
+        "description": "Path to the MSAL token cache. Defaults to <agentDir>/outlook-tokens.json on a multi-agent OpenClaw gateway (per-agent isolation), or ~/.outlook-plugin/tokens.json when no agent context is available. Override only when you need explicit control."
       },
       "account": {
         "type": "string",

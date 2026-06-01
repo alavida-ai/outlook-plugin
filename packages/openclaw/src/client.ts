@@ -13,27 +13,62 @@ export interface PluginConfig {
   tenantId?: string;
   tokenCachePath?: string;
   account?: string;
+  /**
+   * Set by the OpenClaw plugin SDK via the tool-factory context. Used to scope
+   * the default cache path to the agent's own state dir.
+   */
+  agentId?: string;
+  /**
+   * Set by the OpenClaw plugin SDK via the tool-factory context. When present
+   * and no explicit `tokenCachePath` / `OUTLOOK_TOKEN_CACHE` overrides apply,
+   * the token cache lives at `<agentDir>/outlook-tokens.json`.
+   */
+  agentDir?: string;
 }
 
-function defaultCachePath(): string {
-  return process.env.OUTLOOK_TOKEN_CACHE ?? join(homedir(), '.outlook-plugin', 'tokens.json');
+/**
+ * Resolve where the token cache for this invocation should live.
+ *
+ * Precedence (highest first):
+ *   1. `config.tokenCachePath` — explicit operator override in plugin config.
+ *   2. `OUTLOOK_TOKEN_CACHE` — process-level override (mainly for tests / VPS overrides).
+ *   3. `<agentDir>/outlook-tokens.json` — per-agent default when running under
+ *      the OpenClaw plugin runtime (`agentDir` comes from the trusted
+ *      `OpenClawPluginToolContext`).
+ *   4. `~/.outlook-plugin/tokens.json` — standalone fallback (CLI / no host context).
+ */
+export function resolveCachePath(
+  config: Pick<PluginConfig, 'tokenCachePath' | 'agentDir'>,
+): string {
+  if (config.tokenCachePath) return config.tokenCachePath;
+  if (process.env.OUTLOOK_TOKEN_CACHE) return process.env.OUTLOOK_TOKEN_CACHE;
+  if (config.agentDir) return join(config.agentDir, 'outlook-tokens.json');
+  return join(homedir(), '.outlook-plugin', 'tokens.json');
 }
 
-let cachedClient: { config: PluginConfig; client: OutlookClient } | null = null;
+function clientKey(config: PluginConfig): string {
+  // Cache path is the primary discriminator. clientId/tenantId folded in
+  // because operators can override them and a fresh MSAL app must be minted.
+  return [config.clientId ?? '', config.tenantId ?? '', resolveCachePath(config)].join('|');
+}
+
+const clientByKey = new Map<string, OutlookClient>();
 
 /**
  * Build (or reuse) the OutlookClient for the supplied plugin config.
  *
- * The plugin SDK calls our tools many times per session; constructing the
- * MSAL app and FileTokenCache on every call is wasteful. We memoise on a
- * structural-equality check of the config; if the operator hot-reloads the
- * config with new values, the next call rebuilds.
+ * On a multi-agent OpenClaw gateway the same plugin is invoked by many
+ * agents in the same process; each agent gets its own cache file. We
+ * memoise per `(clientId, tenantId, resolvedCachePath)` so each agent gets
+ * its own MSAL app + token cache instance, and so a single agent's repeat
+ * invocations reuse the same instance instead of paying the MSAL init cost
+ * on every tool call.
  */
 export function getClient(config: PluginConfig): OutlookClient {
-  if (cachedClient && shallowEqualConfig(cachedClient.config, config)) {
-    return cachedClient.client;
-  }
-  const cache: TokenCache = new FileTokenCache(config.tokenCachePath ?? defaultCachePath());
+  const key = clientKey(config);
+  const existing = clientByKey.get(key);
+  if (existing) return existing;
+  const cache: TokenCache = new FileTokenCache(resolveCachePath(config));
   const app = buildMsalApp({
     cache,
     clientId: config.clientId,
@@ -41,20 +76,11 @@ export function getClient(config: PluginConfig): OutlookClient {
   });
   const graph = makeGraphClient({ app, cache, preferredUpn: config.account });
   const client = new OutlookClient(graph);
-  cachedClient = { config: { ...config }, client };
+  clientByKey.set(key, client);
   return client;
 }
 
-/** Test-only: reset the memoised client. Exported so unit tests can isolate. */
+/** Test-only: clear the memoisation map so tests get fresh clients. */
 export function _resetClientForTesting(): void {
-  cachedClient = null;
-}
-
-function shallowEqualConfig(a: PluginConfig, b: PluginConfig): boolean {
-  return (
-    a.clientId === b.clientId &&
-    a.tenantId === b.tenantId &&
-    a.tokenCachePath === b.tokenCachePath &&
-    a.account === b.account
-  );
+  clientByKey.clear();
 }

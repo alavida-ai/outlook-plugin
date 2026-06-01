@@ -18,7 +18,11 @@ import {
   type TSchema,
   type Static,
 } from 'typebox';
-import type { AnyAgentTool, OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+import type {
+  AnyAgentTool,
+  OpenClawPluginApi,
+  OpenClawPluginToolContext,
+} from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { PluginConfig } from './client.js';
 import { isToolErrorEnvelope, withErrorMapping } from './errors.js';
@@ -138,7 +142,11 @@ export function registerTool<TParameters extends TSchema>(
   descriptor: ToolDescriptor<TParameters>,
   getConfig: () => PluginConfig,
 ): void {
-  const tool: AnyAgentTool = {
+  // Pass a FACTORY (not a static tool) so the host invokes us once per
+  // agent setup with that agent's trusted context (`agentId`, `agentDir`,
+  // `sessionKey`, …). The factory closes over the per-agent ctx and bakes
+  // it into the per-execute config the tool body receives.
+  api.registerTool((ctx: OpenClawPluginToolContext): AnyAgentTool => ({
     name: descriptor.name,
     description: descriptor.description,
     parameters: withSharedParams(descriptor.parameters),
@@ -152,14 +160,19 @@ export function registerTool<TParameters extends TSchema>(
           details: { help: helpText, tool: descriptor.name },
         };
       }
-      const config = getConfig();
+      // Read plugin config fresh each call (supports hot-reload), overlay
+      // with the agent-scoped context captured at factory time.
+      const config: PluginConfig = {
+        ...getConfig(),
+        agentId: ctx.agentId,
+        agentDir: ctx.agentDir,
+      };
       const result = await withErrorMapping(descriptor.name, () =>
         descriptor.execute(meta.toolParams as Static<TParameters>, config),
       );
       return toResult(result, meta.outputMode);
     },
-  };
-  api.registerTool(tool);
+  }));
 }
 
 export function defineTool<TParameters extends TSchema>(

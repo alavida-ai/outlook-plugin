@@ -19,6 +19,9 @@ import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import type { PluginConfig } from './client.js';
 import { readPluginConfig, registerTool, type ToolDescriptor } from './register.js';
 
+import authLogin from './tools/auth-login.js';
+import authStatus from './tools/auth-status.js';
+import authLogout from './tools/auth-logout.js';
 import whoami from './tools/whoami.js';
 import mailList from './tools/mail-list.js';
 import mailRead from './tools/mail-read.js';
@@ -45,6 +48,9 @@ import calendarAvailability from './tools/calendar-availability.js';
 import contactsList from './tools/contacts-list.js';
 
 const TOOLS: ToolDescriptor[] = [
+  authLogin,
+  authStatus,
+  authLogout,
   whoami,
   mailList,
   mailRead,
@@ -81,7 +87,8 @@ const configJsonSchema: any = Type.Object({
   ),
   tokenCachePath: Type.Optional(
     Type.String({
-      description: 'Path to the MSAL token cache. Defaults to ~/.outlook-plugin/tokens.json.',
+      description:
+        'Path to the MSAL token cache. Defaults to <agentDir>/outlook-tokens.json on a multi-agent OpenClaw gateway (per-agent isolation), or ~/.outlook-plugin/tokens.json when no agent context is available. Override only when you need explicit control.',
     }),
   ),
   account: Type.Optional(
