@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@microsoft/microsoft-graph-client';
 
 import { OutlookClient } from '../client.js';
-import { normaliseIso } from './calendar.js';
+import { addDaysToDateStr, dateStringInTz, normaliseIso } from './calendar.js';
 
 interface FakeRequest {
   capturedPaths: string[];
@@ -177,7 +177,36 @@ describe('CalendarResource.get', () => {
   });
 });
 
+describe('date helpers', () => {
+  it('dateStringInTz returns YYYY-MM-DD in the named timezone', () => {
+    // 2026-06-11 23:30 UTC is already tomorrow in Sydney.
+    const t = new Date('2026-06-11T23:30:00Z');
+    expect(dateStringInTz(t, 'UTC')).toBe('2026-06-11');
+    expect(dateStringInTz(t, 'Australia/Sydney')).toBe('2026-06-12');
+    // And still yesterday in Los Angeles.
+    expect(dateStringInTz(t, 'America/Los_Angeles')).toBe('2026-06-11');
+  });
+  it('addDaysToDateStr walks the calendar correctly', () => {
+    expect(addDaysToDateStr('2026-06-11', 0)).toBe('2026-06-11');
+    expect(addDaysToDateStr('2026-06-11', 7)).toBe('2026-06-18');
+    expect(addDaysToDateStr('2026-06-11', -7)).toBe('2026-06-04');
+    // Month rollover
+    expect(addDaysToDateStr('2026-06-30', 1)).toBe('2026-07-01');
+    expect(addDaysToDateStr('2026-07-01', -1)).toBe('2026-06-30');
+    // Year rollover
+    expect(addDaysToDateStr('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
 describe('CalendarResource.availability', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-11T12:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('POSTs /me/calendar/getSchedule with the supplied emails', async () => {
     const { graph, calls } = fakeGraph([
       {
@@ -225,8 +254,64 @@ describe('CalendarResource.availability', () => {
       'at least one',
     );
   });
-});
 
-// Silences a lint warning about importing `vi` when no spies are used in this
-// file — kept for parity with mail.test.ts and to make adding spies trivial.
-void vi;
+  it('asc default: window starts at today (in tz) and runs N days forward', async () => {
+    const { graph, calls } = fakeGraph([{ value: [] }]);
+    const out = new OutlookClient(graph);
+    await out.calendar.availability({
+      emails: ['a@b.com'],
+      days: 3,
+      timeZone: 'Europe/London',
+    });
+    const body = calls.capturedPosts[0] as Record<string, unknown>;
+    // System time pinned at 2026-06-11T12:00:00Z → 13:00 BST → today is 2026-06-11 in London.
+    expect((body.startTime as { dateTime: string }).dateTime).toBe(
+      '2026-06-11T00:00:00',
+    );
+    expect((body.endTime as { dateTime: string }).dateTime).toBe(
+      '2026-06-14T00:00:00',
+    );
+    expect((body.startTime as { timeZone: string }).timeZone).toBe('Europe/London');
+    // Prefer header anchors response datetimes in the same tz.
+    expect(calls.capturedHeaders).toEqual([
+      ['Prefer', 'outlook.timezone="Europe/London"'],
+    ]);
+  });
+
+  it('desc: window ends after pivot and walks back N-1 days', async () => {
+    const { graph, calls } = fakeGraph([{ value: [] }]);
+    const out = new OutlookClient(graph);
+    await out.calendar.availability({
+      emails: ['a@b.com'],
+      days: 3,
+      timeZone: 'UTC',
+      direction: 'desc',
+    });
+    const body = calls.capturedPosts[0] as Record<string, unknown>;
+    // today=2026-06-11; desc days=3 → [pivot-2, pivot+1) → 06-09..06-12.
+    expect((body.startTime as { dateTime: string }).dateTime).toBe(
+      '2026-06-09T00:00:00',
+    );
+    expect((body.endTime as { dateTime: string }).dateTime).toBe(
+      '2026-06-12T00:00:00',
+    );
+  });
+
+  it('explicit pivot anchors the window without considering "now"', async () => {
+    const { graph, calls } = fakeGraph([{ value: [] }]);
+    const out = new OutlookClient(graph);
+    await out.calendar.availability({
+      emails: ['a@b.com'],
+      days: 5,
+      timeZone: 'UTC',
+      pivot: '2026-09-01',
+    });
+    const body = calls.capturedPosts[0] as Record<string, unknown>;
+    expect((body.startTime as { dateTime: string }).dateTime).toBe(
+      '2026-09-01T00:00:00',
+    );
+    expect((body.endTime as { dateTime: string }).dateTime).toBe(
+      '2026-09-06T00:00:00',
+    );
+  });
+});

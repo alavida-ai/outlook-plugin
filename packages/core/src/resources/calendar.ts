@@ -73,12 +73,37 @@ export interface ListEventsOptions {
 
 export interface AvailabilityInput {
   emails: string[];
-  /** Days forward. Default: 7. */
+  /**
+   * Number of calendar days in the window. Default: 7.
+   *
+   * Combines with `pivot` and `direction` to define the window:
+   *   - `direction: 'asc'`  → `[pivot 00:00, pivot+N days 00:00)`
+   *   - `direction: 'desc'` → `[pivot-(N-1) days 00:00, pivot+1 day 00:00)`
+   *
+   * Window length is always exactly N calendar days, anchored to midnight
+   * in the chosen `timeZone` so it lines up with real days.
+   */
   days?: number;
   /** Interval in minutes for the availability view. Default: 30. */
   interval?: number;
   /** IANA timezone for the query window. Default: 'UTC'. */
   timeZone?: string;
+  /**
+   * Anchor date for the window. Accepts `YYYY-MM-DD` (uses midnight in
+   * `timeZone`) or a full ISO 8601 datetime (the date portion is taken,
+   * time is ignored — the window always starts at midnight). Default:
+   * today in `timeZone`.
+   */
+  pivot?: string;
+  /**
+   * Direction of the window relative to `pivot`. Default: `'asc'`.
+   *
+   *   - `'asc'`  → pivot + future. Window is `[pivot, pivot + days)`.
+   *   - `'desc'` → past + pivot. Window is `[pivot - (days-1), pivot + 1]`.
+   *
+   * Both directions always *include* the pivot day itself.
+   */
+  direction?: 'asc' | 'desc';
 }
 
 export interface AvailabilityScheduleSummary {
@@ -221,6 +246,40 @@ function plusDaysIso(days: number): string {
   return new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+/**
+ * Format a Date as `YYYY-MM-DD` in the given IANA TZ. Used by
+ * `availability` to anchor the window on the calendar day in the user's
+ * TZ — not the UTC day — so "today" means the day the user is actually
+ * living.
+ *
+ * Uses `Intl.DateTimeFormat` (`en-CA` gives ISO-shaped output) so this
+ * works without a TZ library.
+ */
+export function dateStringInTz(date: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const y = parts.find((p) => p.type === 'year')?.value ?? '';
+  const m = parts.find((p) => p.type === 'month')?.value ?? '';
+  const d = parts.find((p) => p.type === 'day')?.value ?? '';
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Add `days` to a `YYYY-MM-DD` string and return the result in the same
+ * shape. Negative `days` walks backwards. Calendar-day exact — handles
+ * month/year rollover correctly via UTC anchoring (we don't care about
+ * DST here because we're adding whole days to a date-only string).
+ */
+export function addDaysToDateStr(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function envelopeOf<T>(raw: RawPageResponse<T>): PageEnvelope<T> {
   const results = raw.value ?? [];
   return {
@@ -292,12 +351,28 @@ export class CalendarResource {
     const days = input.days ?? 7;
     const interval = input.interval ?? 30;
     const tz = input.timeZone ?? 'UTC';
+    const direction = input.direction ?? 'asc';
 
-    // Graph's getSchedule wants the `dateTime` stripped of any tz suffix —
-    // the timezone moves into the `timeZone` field next to it.
-    const startTime = nowUtcIso().replace(/Z$/, '');
-    const end = new Date(Date.now() + days * 86_400_000).toISOString();
-    const endTime = end.replace(/\.\d{3}Z$/, '').replace(/Z$/, '');
+    // Anchor the window on a calendar day in the user's TZ. Take the date
+    // portion of `pivot` (if given) or today-in-tz (if not). Time is always
+    // midnight; we use whole-day windows so the result lines up with real
+    // calendar days.
+    const pivotDateStr = (input.pivot ?? dateStringInTz(new Date(), tz)).slice(0, 10);
+
+    // Window math: both directions include the pivot day. `asc` walks N
+    // days forward from pivot; `desc` walks N-1 days backward, ending
+    // after the pivot day.
+    const startDateStr =
+      direction === 'asc'
+        ? pivotDateStr
+        : addDaysToDateStr(pivotDateStr, -(days - 1));
+    const endDateStr =
+      direction === 'asc'
+        ? addDaysToDateStr(pivotDateStr, days)
+        : addDaysToDateStr(pivotDateStr, 1);
+
+    const startTime = `${startDateStr}T00:00:00`;
+    const endTime = `${endDateStr}T00:00:00`;
 
     const payload = {
       schedules: input.emails,
@@ -307,8 +382,12 @@ export class CalendarResource {
     };
 
     try {
+      // `Prefer: outlook.timezone` makes Graph return scheduleItem datetimes
+      // in our chosen TZ, so the CLI doesn't have to convert. Quoting per
+      // RFC 7240.
       const resp = (await this.graph
         .api('/me/calendar/getSchedule')
+        .header('Prefer', `outlook.timezone="${tz}"`)
         .post(payload)) as RawPageResponse<ScheduleInformation>;
       const schedules = (resp.value ?? []).map((s) => scheduleSummaryOf(s));
       return {
