@@ -146,38 +146,35 @@ export function registerTool<TParameters extends TSchema>(
   // agent setup with that agent's trusted context (`agentId`, `agentDir`,
   // `sessionKey`, …). The factory closes over the per-agent ctx and bakes
   // it into the per-execute config the tool body receives.
-  api.registerTool(
-    (ctx: OpenClawPluginToolContext): AnyAgentTool => ({
-      name: descriptor.name,
-      description: descriptor.description,
-      parameters: withSharedParams(descriptor.parameters),
-      label: descriptor.label ?? descriptor.name,
-      async execute(_toolCallId: string, params: unknown): Promise<ToolResultEnvelope> {
-        const meta = splitMeta(params);
-        if (meta.helpRequested) {
-          const helpText = buildHelpText(descriptor);
-          return {
-            content: [{ type: 'text', text: helpText }],
-            details: { help: helpText, tool: descriptor.name },
-          };
-        }
-        // Read plugin config fresh each call (supports hot-reload), overlay
-        // with the agent-scoped context captured at factory time.
-        const config: PluginConfig = {
-          ...getConfig(),
-          agentId: ctx.agentId,
-          agentDir: ctx.agentDir,
+  // Second arg `{ name }` is the inspector hint — factories are opaque at
+  // inspect time, so the SDK needs it upfront, else tools show as `(anonymous)`.
+  api.registerTool((ctx: OpenClawPluginToolContext): AnyAgentTool => ({
+    name: descriptor.name,
+    description: descriptor.description,
+    parameters: withSharedParams(descriptor.parameters),
+    label: descriptor.label ?? descriptor.name,
+    async execute(_toolCallId: string, params: unknown): Promise<ToolResultEnvelope> {
+      const meta = splitMeta(params);
+      if (meta.helpRequested) {
+        const helpText = buildHelpText(descriptor);
+        return {
+          content: [{ type: 'text', text: helpText }],
+          details: { help: helpText, tool: descriptor.name },
         };
-        const result = await withErrorMapping(descriptor.name, () =>
-          descriptor.execute(meta.toolParams as Static<TParameters>, config),
-        );
-        return toResult(result, meta.outputMode);
-      },
-    }),
-    // Inspector hint: factories are opaque at inspect time, so the SDK
-    // needs `opts.name` upfront — otherwise tools show as `(anonymous)`.
-    { name: descriptor.name },
-  );
+      }
+      // Read plugin config fresh each call (supports hot-reload), overlay
+      // with the agent-scoped context captured at factory time.
+      const config: PluginConfig = {
+        ...getConfig(),
+        agentId: ctx.agentId,
+        agentDir: ctx.agentDir,
+      };
+      const result = await withErrorMapping(descriptor.name, () =>
+        descriptor.execute(meta.toolParams as Static<TParameters>, config),
+      );
+      return toResult(result, meta.outputMode);
+    },
+  }), { name: descriptor.name });
 }
 
 export function defineTool<TParameters extends TSchema>(
