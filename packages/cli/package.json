@@ -1,6 +1,6 @@
 {
   "name": "@alavida-ai/outlook-cli",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Alavida Outlook CLI — read mail, draft messages, manage calendar via Microsoft Graph.",
   "type": "module",
   "license": "UNLICENSED",
