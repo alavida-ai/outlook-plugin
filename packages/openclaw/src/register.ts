@@ -146,6 +146,8 @@ export function registerTool<TParameters extends TSchema>(
   // agent setup with that agent's trusted context (`agentId`, `agentDir`,
   // `sessionKey`, …). The factory closes over the per-agent ctx and bakes
   // it into the per-execute config the tool body receives.
+  // Second arg `{ name }` is the inspector hint — factories are opaque at
+  // inspect time, so the SDK needs it upfront, else tools show as `(anonymous)`.
   api.registerTool((ctx: OpenClawPluginToolContext): AnyAgentTool => ({
     name: descriptor.name,
     description: descriptor.description,
@@ -172,7 +174,7 @@ export function registerTool<TParameters extends TSchema>(
       );
       return toResult(result, meta.outputMode);
     },
-  }));
+  }), { name: descriptor.name });
 }
 
 export function defineTool<TParameters extends TSchema>(
