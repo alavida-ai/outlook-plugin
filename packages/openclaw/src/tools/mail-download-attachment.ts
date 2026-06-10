@@ -41,7 +41,7 @@ interface DownloadResult {
 }
 
 const mailDownloadAttachment = defineTool({
-  name: 'mail_download_attachment',
+  name: 'outlook_mail_download_attachment',
   description:
     "Download a FileAttachment to a local path. Returns the saved path + metadata. Pass `targetPath` as either an existing directory or an explicit file path.",
   parameters: Params,

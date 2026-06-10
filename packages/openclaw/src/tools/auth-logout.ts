@@ -17,7 +17,7 @@ interface AuthLogoutResult {
 }
 
 const authLogout = defineTool({
-  name: 'auth_logout',
+  name: 'outlook_auth_logout',
   description:
     "Clear this agent's cached Outlook token. The next tool call will require auth_login again.",
   parameters: Type.Object({}),

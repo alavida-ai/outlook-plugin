@@ -41,7 +41,7 @@ const Params = Type.Object({
 });
 
 const calendarAvailability = defineTool({
-  name: 'calendar_availability',
+  name: 'outlook_calendar_availability',
   description: `Check free/busy across one or more users. Returns an availabilityView string per email (one character per interval-minute block). Legend: ${AVAILABILITY_LEGEND}. Read-only.`,
   parameters: Params,
   async execute(params: Static<typeof Params>, config) {

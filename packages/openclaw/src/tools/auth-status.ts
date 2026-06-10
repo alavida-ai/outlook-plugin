@@ -53,7 +53,7 @@ type AuthStatusResult =
     };
 
 const authStatus = defineTool({
-  name: 'auth_status',
+  name: 'outlook_auth_status',
   description:
     'Report whether this agent has a usable cached token. After auth_login ' +
     'and the human confirms sign-in, call this to confirm. Returns ' +
