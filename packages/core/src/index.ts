@@ -75,6 +75,8 @@ export type {
 export {
   CalendarResource,
   AVAILABILITY_LEGEND,
+  addDaysToDateStr,
+  dateStringInTz,
   normaliseIso,
   flattenEvent,
 } from './resources/calendar.js';
