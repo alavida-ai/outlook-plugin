@@ -6,7 +6,40 @@ import type {
   Message,
 } from '@microsoft/microsoft-graph-types';
 
-import { liftGraphError, NotFoundError } from '../graph/errors.js';
+import { liftGraphError, MailQuarantinedError, NotFoundError } from '../graph/errors.js';
+
+/**
+ * Minimum age (in minutes) of an **inbound** message before the agent is
+ * allowed to see it. Anything fresher is filtered out — the agent cannot
+ * read it, list its attachments, download from it, or reply/forward it.
+ *
+ * Threat model: one-time passwords / 2FA codes that land in the inbox and
+ * would otherwise leak into the model's context. OTPs typically expire in
+ * 5–15 min, well inside the window.
+ *
+ * Despite the name, no message is "stored" or "released" — this is just an
+ * age filter applied on read. The same Graph query 30 minutes later will
+ * naturally return the message because the cutoff has moved.
+ *
+ * **Drafts are exempt.** Messages the user is composing (`isDraft === true`)
+ * are not inbound, so the threat model doesn't apply — the agent must be
+ * able to read drafts at any age.
+ *
+ * Hard-coded for now. If we ever expose this to plugin config, plumb it
+ * through `MailResource`'s constructor — the resource layer is the choke
+ * point, so the guarantee can't be bypassed by a misconfigured tool.
+ */
+export const MAIL_QUARANTINE_MINUTES = 30;
+const MAIL_QUARANTINE_MS = MAIL_QUARANTINE_MINUTES * 60_000;
+
+/**
+ * Compute the latest `receivedDateTime` an agent is allowed to see right
+ * now. Non-draft messages with `receivedDateTime` newer than this are
+ * filtered out.
+ */
+export function mailQuarantineCutoffIso(now: number = Date.now()): string {
+  return new Date(now - MAIL_QUARANTINE_MS).toISOString();
+}
 
 /** Well-known Graph folder aliases (case-insensitive on input). */
 export const WELL_KNOWN_FOLDERS: ReadonlySet<string> = new Set([
@@ -29,6 +62,7 @@ export type MessageSummary = Pick<
   | 'from'
   | 'receivedDateTime'
   | 'isRead'
+  | 'isDraft'
   | 'hasAttachments'
   | 'bodyPreview'
   | 'webLink'
@@ -160,6 +194,7 @@ const MESSAGE_SELECT_FIELDS = [
   'from',
   'receivedDateTime',
   'isRead',
+  'isDraft',
   'hasAttachments',
   'bodyPreview',
   'webLink',
@@ -177,6 +212,26 @@ const MESSAGE_FULL_SELECT_FIELDS = [
 const FOLDER_SELECT_FIELDS = 'id,displayName,unreadItemCount,totalItemCount';
 
 const ATTACHMENT_SELECT_FIELDS = 'id,name,contentType,size,isInline';
+
+/**
+ * Build the `outlook.cloud.microsoft/mail/inbox/id/<id>` URL — the one you
+ * land on if you navigate to the inbox in the new Outlook web app and click
+ * a message. Renders the inbox chrome with the message selected, rather
+ * than the OWA single-item view that Graph's `webLink` returns.
+ *
+ * **The id must be in `restImmutableEntryId` form (starts with `AAQk…`).**
+ * Graph's default REST id (`AAMk…`) and the `Prefer: IdType="ImmutableId"`
+ * format (`AAkA…`) will both render *some* URL but the new web app does
+ * not recognise them. Use {@link MailResource.inboxLinks} to convert a
+ * batch of REST ids to URLs in one call (it wraps Graph's
+ * `translateExchangeIds` action).
+ *
+ * Returns null if `id` is missing.
+ */
+export function inboxLinkFromId(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return `https://outlook.cloud.microsoft/mail/inbox/id/${encodeURIComponent(id)}`;
+}
 
 /** Heuristic: long opaque strings are Graph folder ids. */
 function looksLikeFolderId(s: string): boolean {
@@ -282,8 +337,99 @@ function envelopeOf<T>(raw: RawPageResponse<T>): PageEnvelope<T> {
   };
 }
 
+/**
+ * Throw {@link MailQuarantinedError} if `receivedDateTime` is within the
+ * quarantine window and the message is not a draft. Drafts are exempt —
+ * they're the user's own composition, not inbound mail. A `null` timestamp
+ * is treated as allowed.
+ */
+function assertNotQuarantined(
+  messageId: string,
+  receivedDateTime: string | null,
+  isDraft: boolean,
+): void {
+  if (isDraft) return;
+  if (!receivedDateTime) return;
+  const received = Date.parse(receivedDateTime);
+  if (!Number.isFinite(received)) return;
+  const cutoffMs = Date.now() - MAIL_QUARANTINE_MS;
+  if (received <= cutoffMs) return;
+  const availableAt = new Date(received + MAIL_QUARANTINE_MS).toISOString();
+  throw new MailQuarantinedError(
+    `Message is within the ${MAIL_QUARANTINE_MINUTES}-minute safety window. ` +
+      `The agent cannot read, reply to, or forward it until ${availableAt}.`,
+    messageId,
+    receivedDateTime,
+    availableAt,
+  );
+}
+
 export class MailResource {
   constructor(private readonly graph: Client) {}
+
+  /**
+   * Cheap pre-flight: fetch only `receivedDateTime` + `isDraft` for
+   * `messageId` and throw `MailQuarantinedError` if it's still within the
+   * quarantine window. Used by methods that would otherwise expose the
+   * message (attachments, reply, forward) before we know whether reading
+   * is allowed. Drafts always pass.
+   */
+  private async ensureMessageNotQuarantined(messageId: string): Promise<void> {
+    let raw: { receivedDateTime?: string | null; isDraft?: boolean | null } | undefined;
+    try {
+      raw = (await this.graph
+        .api(`/me/messages/${encodeURIComponent(messageId)}`)
+        .query({ $select: 'id,receivedDateTime,isDraft' })
+        .get()) as { receivedDateTime?: string | null; isDraft?: boolean | null };
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+    assertNotQuarantined(
+      messageId,
+      raw?.receivedDateTime ?? null,
+      Boolean(raw?.isDraft),
+    );
+  }
+
+  /**
+   * Convert a batch of REST ids (the `AAMk…` ones Graph returns by default)
+   * into `outlook.cloud.microsoft/mail/inbox/id/<id>` URLs. Wraps Graph's
+   * `POST /me/translateExchangeIds` action with `targetIdType:
+   * "restImmutableEntryId"`. One round-trip for up to 1000 ids.
+   *
+   * Returns an object keyed by the input REST id; values are the inbox URL
+   * or null if Graph couldn't translate that specific id.
+   */
+  async inboxLinks(restIds: readonly string[]): Promise<Record<string, string | null>> {
+    const out: Record<string, string | null> = {};
+    if (restIds.length === 0) return out;
+    interface TranslateResult {
+      sourceId?: string;
+      targetId?: string;
+    }
+    interface TranslateResponse {
+      value?: TranslateResult[];
+    }
+    let resp: TranslateResponse;
+    try {
+      resp = (await this.graph.api('/me/translateExchangeIds').post({
+        inputIds: [...restIds],
+        sourceIdType: 'restId',
+        targetIdType: 'restImmutableEntryId',
+      })) as TranslateResponse;
+    } catch (err) {
+      throw liftGraphError(err);
+    }
+    for (const r of resp.value ?? []) {
+      if (!r.sourceId) continue;
+      out[r.sourceId] = r.targetId ? inboxLinkFromId(r.targetId) : null;
+    }
+    // Fill in nulls for any ids Graph didn't translate.
+    for (const id of restIds) {
+      if (!(id in out)) out[id] = null;
+    }
+    return out;
+  }
 
   /** GET /me/mailFolders/<folder>/messages — list messages in a folder. */
   async list(options: ListMessagesOptions = {}): Promise<PageEnvelope<MessageSummary>> {
@@ -307,6 +453,12 @@ export class MailResource {
     }
     if (options.focused) filters.push("inferenceClassification eq 'focused'");
     if (options.other) filters.push("inferenceClassification eq 'other'");
+    // Hide too-fresh inbound messages entirely. Drafts (which the user is
+    // composing) are exempt — only externally received mail is filtered.
+    // OTPs etc. expire before the agent ever has a chance to see them.
+    filters.push(
+      `(isDraft eq true or receivedDateTime le ${mailQuarantineCutoffIso()})`,
+    );
 
     const query: Record<string, string | number> = {
       $top: limit,
@@ -320,7 +472,10 @@ export class MailResource {
     try {
       const folderId = await this.resolveFolderId(folder);
       const path = `/me/mailFolders/${encodeURIComponent(folderId)}/messages`;
-      const raw = (await this.graph.api(path).query(query).get()) as RawPageResponse<MessageSummary>;
+      const raw = (await this.graph
+        .api(path)
+        .query(query)
+        .get()) as RawPageResponse<MessageSummary>;
       return envelopeOf(raw);
     } catch (err) {
       throw liftGraphError(err);
@@ -329,6 +484,7 @@ export class MailResource {
 
   /** GET /me/messages/<id> — full message. */
   async get(messageId: string, options: ReadMessageOptions = {}): Promise<MessageFull> {
+    let msg: MessageFull;
     try {
       let req = this.graph
         .api(`/me/messages/${encodeURIComponent(messageId)}`)
@@ -336,13 +492,29 @@ export class MailResource {
       if (options.preferText) {
         req = req.header('Prefer', 'outlook.body-content-type="text"');
       }
-      return (await req.get()) as MessageFull;
+      msg = (await req.get()) as MessageFull;
     } catch (err) {
       throw liftGraphError(err);
     }
+    // Post-check: we already paid the fetch, but never surface the body to
+    // the caller if the message is still in the quarantine window. Drafts
+    // are exempt — see `assertNotQuarantined`.
+    assertNotQuarantined(
+      messageId,
+      msg.receivedDateTime ?? null,
+      Boolean(msg.isDraft),
+    );
+    return msg;
   }
 
-  /** GET /me/messages?$search="..." — KQL search across all folders. */
+  /**
+   * GET /me/messages?$search="..." — KQL search across all folders.
+   *
+   * Graph won't let us combine `$search` with `$filter`, so the quarantine
+   * is enforced by post-filtering the result set. `count` and `nextLink`
+   * reflect the post-filter view; the agent never learns that fresh hits
+   * existed.
+   */
   async search(options: SearchMessagesOptions): Promise<PageEnvelope<MessageSummary>> {
     const limit = options.limit ?? 25;
     // Graph requires $search values to be double-quoted.
@@ -356,7 +528,18 @@ export class MailResource {
           $select: MESSAGE_SELECT_FIELDS,
         })
         .get()) as RawPageResponse<MessageSummary>;
-      return envelopeOf(raw);
+      const cutoffMs = Date.now() - MAIL_QUARANTINE_MS;
+      const filtered = (raw.value ?? []).filter((m) => {
+        if (m.isDraft) return true; // user's own composition, always visible
+        if (!m.receivedDateTime) return true; // no inbound timestamp, allow
+        const t = Date.parse(m.receivedDateTime);
+        return !Number.isFinite(t) || t <= cutoffMs;
+      });
+      return {
+        results: filtered,
+        count: filtered.length,
+        nextLink: raw['@odata.nextLink'] ?? null,
+      };
     } catch (err) {
       throw liftGraphError(err);
     }
@@ -377,6 +560,7 @@ export class MailResource {
 
   /** GET /me/messages/<id>/attachments — metadata only (no contentBytes). */
   async listAttachments(messageId: string): Promise<PageEnvelope<AttachmentSummary>> {
+    await this.ensureMessageNotQuarantined(messageId);
     try {
       const raw = (await this.graph
         .api(`/me/messages/${encodeURIComponent(messageId)}/attachments`)
@@ -399,6 +583,7 @@ export class MailResource {
     messageId: string,
     attachmentId: string,
   ): Promise<DownloadAttachmentResult> {
+    await this.ensureMessageNotQuarantined(messageId);
     let raw: (FileAttachment & { '@odata.type'?: string }) | undefined;
     try {
       raw = (await this.graph
@@ -463,6 +648,7 @@ export class MailResource {
    * original; the PATCH overlays the user's reply text on top.
    */
   async reply(messageId: string, input: ReplyInput): Promise<DraftSummary> {
+    await this.ensureMessageNotQuarantined(messageId);
     const endpoint = input.replyAll ? 'createReplyAll' : 'createReply';
     const idEnc = encodeURIComponent(messageId);
     try {
@@ -501,6 +687,7 @@ export class MailResource {
     if (input.to.length === 0) {
       throw new Error('At least one --to recipient is required for forward.');
     }
+    await this.ensureMessageNotQuarantined(messageId);
     const idEnc = encodeURIComponent(messageId);
     const payload: Record<string, unknown> = {
       comment: input.comment ?? '',
