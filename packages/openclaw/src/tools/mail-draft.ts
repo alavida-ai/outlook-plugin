@@ -32,7 +32,7 @@ const Params = Type.Object({
 });
 
 const mailDraft = defineTool({
-  name: 'mail_draft',
+  name: 'outlook_mail_draft',
   description:
     "Create a draft message in the user's Drafts folder. Never sends — the human reviews and sends from Outlook. Returns the draft id and a compose URL for one-click open-in-edit-mode.",
   parameters: Params,

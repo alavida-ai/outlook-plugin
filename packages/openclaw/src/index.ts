@@ -33,20 +33,19 @@ import mailDraft from './tools/mail-draft.js';
 import mailReply from './tools/mail-reply.js';
 import mailForward from './tools/mail-forward.js';
 import mailAddAttachment from './tools/mail-add-attachment.js';
-import mailMove from './tools/mail-move.js';
-import mailDelete from './tools/mail-delete.js';
-import mailMark from './tools/mail-mark.js';
-import mailFlag from './tools/mail-flag.js';
-import mailImportance from './tools/mail-importance.js';
 import calendarList from './tools/calendar-list.js';
 import calendarShow from './tools/calendar-show.js';
-import calendarCreate from './tools/calendar-create.js';
-import calendarUpdate from './tools/calendar-update.js';
-import calendarDelete from './tools/calendar-delete.js';
-import calendarRespond from './tools/calendar-respond.js';
 import calendarAvailability from './tools/calendar-availability.js';
-import contactsList from './tools/contacts-list.js';
 
+/**
+ * Tools deliberately not registered (see
+ * clients/sunglobal/scoping/agent-data-handling-response.md):
+ *   - mail send/move/delete/mark/flag/importance — Mail.ReadWrite scope
+ *     would permit them but the agent surface is draft-only by design.
+ *   - calendar create/update/delete/respond — read-only scope; writes
+ *     would 403 at Graph even if registered.
+ *   - contacts — `Contacts.ReadWrite` is not in the requested scope set.
+ */
 const TOOLS: ToolDescriptor[] = [
   authLogin,
   authStatus,
@@ -62,19 +61,9 @@ const TOOLS: ToolDescriptor[] = [
   mailReply,
   mailForward,
   mailAddAttachment,
-  mailMove,
-  mailDelete,
-  mailMark,
-  mailFlag,
-  mailImportance,
   calendarList,
   calendarShow,
-  calendarCreate,
-  calendarUpdate,
-  calendarDelete,
-  calendarRespond,
   calendarAvailability,
-  contactsList,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

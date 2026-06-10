@@ -30,7 +30,7 @@ interface AuthLoginResult {
 }
 
 const authLogin = defineTool({
-  name: 'auth_login',
+  name: 'outlook_auth_login',
   description:
     'Start an OAuth device-code login for this agent. Returns the URL and ' +
     'six-character code immediately — surface them to the human and wait ' +

@@ -18,17 +18,17 @@ import authStatus from './auth-status.js';
 
 describe('auth tool descriptors', () => {
   it('auth_login has the expected shape', () => {
-    expect(authLogin.name).toBe('auth_login');
+    expect(authLogin.name).toBe('outlook_auth_login');
     expect(authLogin.description.length).toBeGreaterThan(20);
   });
 
   it('auth_status has the expected shape', () => {
-    expect(authStatus.name).toBe('auth_status');
+    expect(authStatus.name).toBe('outlook_auth_status');
     expect(authStatus.description.length).toBeGreaterThan(20);
   });
 
   it('auth_logout has the expected shape', () => {
-    expect(authLogout.name).toBe('auth_logout');
+    expect(authLogout.name).toBe('outlook_auth_logout');
     expect(authLogout.description.length).toBeGreaterThan(20);
   });
 });

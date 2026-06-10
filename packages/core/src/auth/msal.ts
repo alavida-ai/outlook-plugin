@@ -24,12 +24,21 @@ export const EMBEDDED_TENANT = 'common';
 /**
  * Delegated scopes the CLI requests at sign-in. `offline_access` is added
  * implicitly by MSAL for public clients.
+ *
+ * Scope policy (see clients/sunglobal/scoping/agent-data-handling-response.md):
+ *   - `Mail.ReadWrite`: read inbound mail + create drafts. We do not register
+ *     send/move/delete/mark/flag/importance tools, so the triage half of the
+ *     scope is unreachable from the agent.
+ *   - `Calendars.Read` + `.Shared`: read-only access to the user's own and
+ *     shared calendars. Writes are explicitly off the table.
+ *   - `User.Read`: signed-in user's profile, for identification.
+ *
+ * `Contacts.ReadWrite` is intentionally not requested.
  */
 export const OUTLOOK_SCOPES = [
   'Mail.ReadWrite',
-  'Calendars.ReadWrite',
-  'Calendars.ReadWrite.Shared',
-  'Contacts.ReadWrite',
+  'Calendars.Read',
+  'Calendars.Read.Shared',
   'User.Read',
 ] as const;
 

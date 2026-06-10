@@ -70,7 +70,7 @@ function guessContentType(filename: string): string {
 }
 
 const mailAddAttachment = defineTool({
-  name: 'mail_add_attachment',
+  name: 'outlook_mail_add_attachment',
   description:
     "Attach a local file to an existing draft. Reads the file from the OpenClaw host filesystem. Returns the attachment id and metadata. Caps at 3 MB; the upload-session API for larger files is a future enhancement.",
   parameters: Params,

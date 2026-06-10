@@ -81,14 +81,26 @@ export async function run(argv: string[]): Promise<number> {
       focused: parsed.values.focused,
       other: parsed.values.other,
     });
+    // One batch translate covers every row's inbox URL.
+    const restIds = page.results
+      .map((m) => m.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    let inboxLinks: Record<string, string | null> = {};
+    if (restIds.length > 0) {
+      try {
+        inboxLinks = await ctx.outlook.mail.inboxLinks(restIds);
+      } catch {
+        // Translation failures shouldn't block the listing.
+      }
+    }
     if (parsed.values.json) {
       printJson({
-        results: page.results.map(messageSummaryJson),
+        results: page.results.map((m) => messageSummaryJson(m, inboxLinks[m.id ?? ''] ?? null)),
         count: page.count,
         nextLink: page.nextLink,
       });
     } else {
-      renderMessageList(page.results, parsed.values.folder ?? 'inbox');
+      renderMessageList(page.results, parsed.values.folder ?? 'inbox', inboxLinks);
     }
     return 0;
   } catch (err) {
@@ -97,20 +109,32 @@ export async function run(argv: string[]): Promise<number> {
   }
 }
 
-function messageSummaryJson(m: MessageSummary): Record<string, unknown> {
+function messageSummaryJson(
+  m: MessageSummary,
+  inboxLink: string | null,
+): Record<string, unknown> {
   return {
     id: m.id ?? null,
     subject: m.subject ?? null,
     from: m.from?.emailAddress?.address ?? null,
     receivedDateTime: m.receivedDateTime ?? null,
     isRead: m.isRead ?? null,
+    isDraft: m.isDraft ?? null,
     hasAttachments: m.hasAttachments ?? null,
     bodyPreview: m.bodyPreview ?? null,
+    // `webLink` is Graph's OWA single-item URL. `inboxLink` opens the new
+    // Outlook web app on the inbox with this message selected (built by
+    // translating the REST id to `restImmutableEntryId`).
     webLink: m.webLink ?? null,
+    inboxLink,
   };
 }
 
-function renderMessageList(messages: MessageSummary[], folder: string): void {
+function renderMessageList(
+  messages: MessageSummary[],
+  folder: string,
+  inboxLinks: Record<string, string | null>,
+): void {
   if (messages.length === 0) {
     println(`(no messages in ${folder})`);
     return;
@@ -123,6 +147,8 @@ function renderMessageList(messages: MessageSummary[], folder: string): void {
     const attach = m.hasAttachments ? ' [att]' : '';
     const unread = m.isRead === false ? '* ' : '  ';
     println(`${unread}${when}  ${from}  ${subject}${attach}`);
-    if (m.id) println(`    id: ${m.id}`);
+    if (m.id) println(`    id:   ${m.id}`);
+    const link = m.id ? inboxLinks[m.id] : null;
+    if (link) println(`    open: ${link}`);
   }
 }

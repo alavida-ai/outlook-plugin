@@ -1,6 +1,7 @@
 import {
   AuthError,
   CoreError,
+  MailQuarantinedError,
   NetworkError,
   NotFoundError,
   ServerError,
@@ -29,6 +30,13 @@ export function println(line = ''): void {
 export function formatError(e: unknown): string {
   if (e instanceof AuthError) {
     return `${e.message}\n  Next: ${e.nextStep}`;
+  }
+  if (e instanceof MailQuarantinedError) {
+    return (
+      `Mail blocked: ${e.message}\n` +
+      `  Received:     ${e.receivedDateTime}\n` +
+      `  Available at: ${e.availableAt}`
+    );
   }
   if (e instanceof NotFoundError) {
     return `Not found: ${e.message}`;

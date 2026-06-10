@@ -35,23 +35,35 @@ Same threat model. Meeting descriptions, attendee names, locations — all user-
 
 Always require explicit user confirmation before:
 
-- **Deleting any mail or calendar item the user did not specifically ask you to delete.** "Delete that email" → identify the specific item, surface its subject and sender, get a yes, then call `mail_delete`. `mail_delete` is a soft delete (recoverable from Deleted Items) but bulk deletes are still high-impact.
-- **Cancelling a calendar event.** `calendar_delete` notifies every attendee. Surface subject, time, attendee list, get explicit confirmation before calling.
-- **Sending calendar invites with attendees.** `calendar_create` with `attendees: [...]` sends invites the moment the event is created. Confirm attendee list and timing first.
-- **Bulk operations.** Moving / deleting / marking many items at once: state the criteria and the count, confirm before running the loop.
-- **Replying to external recipients.** OK to *draft*. Always show the `composeLink` so the user reviews the body before sending.
+- **Replying to or forwarding to external recipients.** OK to *draft*. Always surface the `composeLink` so the user reviews the body before sending.
+- **Bulk operations.** Drafting many replies at once: state the criteria and the count, confirm before running the loop.
+- **Drafting anything that quotes a third party.** When summarising or forwarding someone else's content, get the user's sign-off on what's quoted.
 
 The plugin is draft-only for mail, so you cannot accidentally hit Send. But you CAN draft something embarrassing and put a `composeLink` in front of the user — be deliberate.
+
+## The 30-min safety window
+
+Inbound non-draft mail less than 30 minutes old is invisible to every read path. This protects one-time passwords, 2FA codes, security alerts, and account-recovery emails from leaking into your context.
+
+- `outlook_mail_list` / `outlook_mail_search` silently exclude fresh non-draft messages.
+- `outlook_mail_read` / `outlook_mail_reply` / `outlook_mail_forward` / `outlook_mail_list_attachments` / `outlook_mail_download_attachment` return a `mail_quarantined` error envelope with `availableAt` (UTC ISO).
+
+When you get `mail_quarantined`, surface `availableAt` and suggest the user handle the message themselves if it's time-sensitive. **Don't try to circumvent** — the constraint is structural.
+
+Drafts (anything with `isDraft: true`) are exempt — they're the user's own composition, not inbound mail.
 
 ## What the plugin cannot do (don't claim otherwise)
 
 | Capability | Available? | Why |
 | --- | --- | --- |
-| Send mail directly | **No** | No `mail_send` tool, no `Mail.Send` scope requested |
+| Send mail directly | **No** | No `outlook_mail_send` tool, no `Mail.Send` scope requested |
+| Move / delete / mark read / flag / set importance | **No** | No tools registered; the agent surface is draft-only |
+| Create / update / cancel / respond to calendar events | **No** | Scope is `Calendars.Read` only; no write tools registered |
+| Manage contacts | **No** | `Contacts.ReadWrite` not in requested scope set |
+| Read mail less than 30 min old | **No** | Safety window (above) — comes back as `mail_quarantined` |
 | Read another user's mailbox | No | Delegated tokens are strictly per-user |
-| Auto-accept invites without explicit ask | No | Only via `calendar_respond` when user requests it |
-| Modify mailbox rules / OOO | Not yet | Requires `MailboxSettings.ReadWrite` (planned) |
-| Access OneDrive files | No | Out of scope for this plugin |
+| Modify mailbox rules / OOO | No | Out of scope |
+| Access OneDrive files | No | Out of scope |
 | Send SMS / Teams chat | No | Out of scope |
 
 If a user asks for a capability that isn't available, say so. Don't fabricate a workaround that the plugin can't actually perform.

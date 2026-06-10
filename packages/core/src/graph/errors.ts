@@ -21,6 +21,26 @@ export class ThrottledError extends CoreError {
 }
 
 /**
+ * Thrown when a mail operation references a message inside the agent's
+ * quarantine window — fresh inbound mail the agent is not allowed to read,
+ * draft from, or otherwise expose to the model. Threat model: one-time
+ * passwords / security codes the user wants to keep out of the agent's
+ * context. See `MAIL_QUARANTINE_MINUTES` in `resources/mail.ts`.
+ */
+export class MailQuarantinedError extends CoreError {
+  constructor(
+    message: string,
+    public readonly messageId: string,
+    /** When the message arrived (ISO 8601, UTC). */
+    public readonly receivedDateTime: string,
+    /** Earliest UTC ISO timestamp at which the agent may read it. */
+    public readonly availableAt: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
  * Lift any error thrown by the Graph SDK into our taxonomy. Callers wrap
  * every `client.api(...).get/post/etc()` with this so consumers never see a
  * bare `GraphError`.

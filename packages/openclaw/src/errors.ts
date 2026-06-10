@@ -16,6 +16,7 @@ import {
   AuthLockTimeoutError,
   AuthRefreshFailedError,
   CoreError,
+  MailQuarantinedError,
   NetworkError,
   NotFoundError,
   ServerError,
@@ -33,6 +34,10 @@ export interface ToolErrorResponse {
   retryAfterSeconds?: number;
   /** AuthAmbiguousAccountError — cached UPNs the agent can choose from. */
   accounts?: readonly string[];
+  /** MailQuarantinedError — earliest UTC ISO timestamp the message can be read. */
+  availableAt?: string;
+  /** MailQuarantinedError — when the message arrived (UTC ISO). */
+  receivedDateTime?: string;
 }
 
 export interface ToolErrorEnvelope {
@@ -109,6 +114,18 @@ function mapError(_toolName: string, e: unknown): ToolErrorResponse {
   }
   if (e instanceof AuthError) {
     return { error: 'auth_error', message: e.message, hint: e.nextStep };
+  }
+  if (e instanceof MailQuarantinedError) {
+    return {
+      error: 'mail_quarantined',
+      message: e.message,
+      hint:
+        'Inbound messages are hidden for a short window after arrival to keep ' +
+        'one-time codes and 2FA out of the agent. Wait until `availableAt` and ' +
+        'try again, or ask the user to handle this message themselves.',
+      availableAt: e.availableAt,
+      receivedDateTime: e.receivedDateTime,
+    };
   }
   if (e instanceof NotFoundError) {
     return {

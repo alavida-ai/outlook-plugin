@@ -34,7 +34,7 @@ const Params = Type.Object({
 });
 
 const calendarList = defineTool({
-  name: 'calendar_list',
+  name: 'outlook_calendar_list',
   description:
     'List calendar events in a date range. Uses Graph calendarView — recurring events are expanded into occurrences. Defaults to the next seven days. Read-only.',
   parameters: Params,

@@ -55,10 +55,21 @@ export async function run(argv: string[]): Promise<number> {
   const ctx = makeContext({ preferredUpn });
   try {
     const msg = await ctx.outlook.mail.get(messageId, { preferText: parsed.values.text });
+    // Translate this message's REST id to a restImmutableEntryId so we can
+    // build the new-Outlook inbox URL alongside Graph's OWA `webLink`.
+    let inboxLink: string | null = null;
+    if (msg.id) {
+      try {
+        const links = await ctx.outlook.mail.inboxLinks([msg.id]);
+        inboxLink = links[msg.id] ?? null;
+      } catch {
+        // Translation failures shouldn't block the read — leave inboxLink null.
+      }
+    }
     if (parsed.values.json) {
-      printJson(messageFullJson(msg));
+      printJson(messageFullJson(msg, inboxLink));
     } else {
-      renderMessage(msg);
+      renderMessage(msg, inboxLink);
     }
     return 0;
   } catch (err) {
@@ -67,7 +78,10 @@ export async function run(argv: string[]): Promise<number> {
   }
 }
 
-function messageFullJson(m: MessageFull): Record<string, unknown> {
+function messageFullJson(
+  m: MessageFull,
+  inboxLink: string | null,
+): Record<string, unknown> {
   return {
     id: m.id ?? null,
     subject: m.subject ?? null,
@@ -81,7 +95,11 @@ function messageFullJson(m: MessageFull): Record<string, unknown> {
     importance: m.importance ?? null,
     bodyContentType: m.body?.contentType ?? null,
     body: m.body?.content ?? null,
+    // `webLink` is Graph's OWA single-item URL. `inboxLink` opens the new
+    // Outlook web app on the inbox with this message selected — built by
+    // translating the REST id to `restImmutableEntryId`.
     webLink: m.webLink ?? null,
+    inboxLink,
   };
 }
 
@@ -95,7 +113,7 @@ function addresses(list: RecipientLike[] | null | undefined): string[] {
   return out;
 }
 
-function renderMessage(m: MessageFull): void {
+function renderMessage(m: MessageFull, inboxLink: string | null): void {
   println(`Subject: ${m.subject ?? '(no subject)'}`);
   println(`From:    ${m.from?.emailAddress?.address ?? '(unknown)'}`);
   const to = addresses(m.toRecipients).join(', ');
@@ -108,8 +126,8 @@ function renderMessage(m: MessageFull): void {
   }
   println('');
   println(m.body?.content ?? '');
-  if (m.webLink) {
+  if (inboxLink) {
     println('');
-    println(`Open in Outlook: ${m.webLink}`);
+    println(`Open in Outlook: ${inboxLink}`);
   }
 }
