@@ -8,13 +8,16 @@ The CLI maintains its own token cache at `~/.outlook-plugin/tokens.json` (mode `
 outlook auth login
 ```
 
-Prints something like:
+This uses the **Authorization Code + PKCE** flow: your default browser opens to the Microsoft sign-in page and MSAL listens on a `http://localhost` loopback for the redirect. Nothing needs to be exposed publicly and no redirect URI has to be registered — Microsoft accepts localhost for public clients. This flow is compatible with Conditional Access policies that block device-code sign-in.
+
+If the browser can't be opened automatically (e.g. you're over SSH), the URL is printed to stderr so you can open it yourself:
 
 ```
-To sign in, use a web browser to open https://microsoft.com/devicelogin and enter the code ABCD1234 to authenticate.
+Opening your browser to sign in. If it doesn't open, visit:
+https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize?...
 ```
 
-On any device, open the URL, paste the code, sign in with the Microsoft account (work/school or personal), approve the consent screen. The consent screen will show the requested scopes:
+Sign in with the Microsoft account (work/school or personal) and approve the consent screen. The consent screen will show the requested scopes:
 
 - Read your mail (Mail.ReadWrite — draft creation needs the W half; no send)
 - Read your calendars (Calendars.Read)
@@ -31,7 +34,7 @@ outlook auth status
 outlook whoami
 ```
 
-Both should print your UPN, display name, and tenant info. If `auth status` says "not authenticated" after you completed sign-in in the browser, the code may have expired (~15 min) — re-run `outlook auth login`.
+Both should print your UPN, display name, and tenant info. If `auth status` says "not authenticated" after you completed sign-in in the browser, the sign-in may have timed out or been cancelled — re-run `outlook auth login`.
 
 ## Log out
 

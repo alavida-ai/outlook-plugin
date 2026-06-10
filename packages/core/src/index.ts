@@ -35,6 +35,20 @@ export type {
   BackgroundDeviceCodeCompletion,
 } from './auth/device-code-background.js';
 
+export {
+  buildAuthCodeUrl,
+  exchangeAuthCode,
+  PENDING_FLOW_TTL_MS,
+} from './auth/auth-code.js';
+export type {
+  BuildAuthCodeUrlInput,
+  AuthCodeUrlResult,
+  ExchangeAuthCodeInput,
+} from './auth/auth-code.js';
+
+export { loginInteractive } from './auth/interactive.js';
+export type { LoginInteractiveInput } from './auth/interactive.js';
+
 export { logout } from './auth/logout.js';
 export type { LogoutInput } from './auth/logout.js';
 

@@ -8,7 +8,7 @@ import type {
 } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { PluginConfig } from './client.js';
-import { registerTool, type ToolDescriptor } from './register.js';
+import { readPluginConfig, registerTool, type ToolDescriptor } from './register.js';
 
 /**
  * Minimal fake api that captures what registerTool hands to api.registerTool.
@@ -69,6 +69,26 @@ async function callExecute(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (tool as any).execute('test-toolcall-1', params);
 }
+
+describe('readPluginConfig — oauthRedirectUri', () => {
+  it('reads oauthRedirectUri when set to a string', () => {
+    const api = {
+      pluginConfig: { oauthRedirectUri: 'https://gw.ts.net/outlook/auth-callback' },
+    } as unknown as OpenClawPluginApi;
+    expect(readPluginConfig(api).oauthRedirectUri).toBe(
+      'https://gw.ts.net/outlook/auth-callback',
+    );
+  });
+
+  it('leaves oauthRedirectUri undefined when absent or non-string', () => {
+    const absent = { pluginConfig: {} } as unknown as OpenClawPluginApi;
+    expect(readPluginConfig(absent).oauthRedirectUri).toBeUndefined();
+    const wrongType = {
+      pluginConfig: { oauthRedirectUri: 123 },
+    } as unknown as OpenClawPluginApi;
+    expect(readPluginConfig(wrongType).oauthRedirectUri).toBeUndefined();
+  });
+});
 
 describe('registerTool — factory shape + per-agent context capture', () => {
   it('passes a factory function (not a static tool) to api.registerTool', () => {

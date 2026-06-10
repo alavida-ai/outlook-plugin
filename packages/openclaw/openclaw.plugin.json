@@ -44,6 +44,10 @@
       "account": {
         "type": "string",
         "description": "UPN to use when multiple accounts are cached. Required for multi-account hosts."
+      },
+      "oauthRedirectUri": {
+        "type": "string",
+        "description": "Public HTTPS redirect URI for the browser Authorization-Code (PKCE) sign-in flow, e.g. https://<gateway>.<tailnet>.ts.net/outlook/auth-callback. When set, outlook_auth_login returns a sign-in URL instead of a device code (required where Conditional Access blocks device-code flow). Must exactly match a redirect URI registered in the Entra app. Leave unset to keep the device-code flow."
       }
     }
   }
