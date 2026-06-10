@@ -1,34 +1,27 @@
 {
   "id": "outlook",
   "name": "outlook",
-  "description": "Read and triage Microsoft Outlook mail + calendar via Microsoft Graph as the signed-in user. Delegated permissions; draft-only mail.",
+  "description": "Read and draft Microsoft Outlook mail + read calendar via Microsoft Graph as the signed-in user. Delegated permissions; mail writes are draft-only (no send tool, no Mail.Send scope). Inbound mail less than 30 minutes old is filtered out as a safety measure against one-time passwords leaking into the agent context.",
   "skills": ["./skills"],
   "contracts": {
     "tools": [
-      "whoami",
-      "mail_list",
-      "mail_read",
-      "mail_search",
-      "mail_folders",
-      "mail_list_attachments",
-      "mail_download_attachment",
-      "mail_draft",
-      "mail_reply",
-      "mail_forward",
-      "mail_add_attachment",
-      "mail_move",
-      "mail_delete",
-      "mail_mark",
-      "mail_flag",
-      "mail_importance",
-      "calendar_list",
-      "calendar_show",
-      "calendar_create",
-      "calendar_update",
-      "calendar_delete",
-      "calendar_respond",
-      "calendar_availability",
-      "contacts_list"
+      "outlook_auth_login",
+      "outlook_auth_status",
+      "outlook_auth_logout",
+      "outlook_whoami",
+      "outlook_mail_list",
+      "outlook_mail_read",
+      "outlook_mail_search",
+      "outlook_mail_folders",
+      "outlook_mail_list_attachments",
+      "outlook_mail_download_attachment",
+      "outlook_mail_draft",
+      "outlook_mail_reply",
+      "outlook_mail_forward",
+      "outlook_mail_add_attachment",
+      "outlook_calendar_list",
+      "outlook_calendar_show",
+      "outlook_calendar_availability"
     ]
   },
   "activation": { "onStartup": true },
@@ -46,7 +39,7 @@
       },
       "tokenCachePath": {
         "type": "string",
-        "description": "Path to the MSAL token cache. Defaults to ~/.outlook-plugin/tokens.json."
+        "description": "Path to the MSAL token cache. Defaults to <agentDir>/outlook-tokens.json on a multi-agent OpenClaw gateway (per-agent isolation), or ~/.outlook-plugin/tokens.json when no agent context is available. Override only when you need explicit control."
       },
       "account": {
         "type": "string",

@@ -16,7 +16,7 @@ const Params = Type.Object({
 });
 
 const mailListAttachments = defineTool({
-  name: 'mail_list_attachments',
+  name: 'outlook_mail_list_attachments',
   description:
     'List attachment metadata (id, name, contentType, size, isInline) on an Outlook message. Read-only. Use mail_download_attachment to fetch bytes.',
   parameters: Params,

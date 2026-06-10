@@ -23,9 +23,8 @@ describe('buildMsalApp', () => {
   it('exports the spec scope set', () => {
     expect(OUTLOOK_SCOPES).toEqual([
       'Mail.ReadWrite',
-      'Calendars.ReadWrite',
-      'Calendars.ReadWrite.Shared',
-      'Contacts.ReadWrite',
+      'Calendars.Read',
+      'Calendars.Read.Shared',
       'User.Read',
     ]);
   });

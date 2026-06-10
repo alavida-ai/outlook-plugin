@@ -30,7 +30,7 @@ const Params = Type.Object({
 });
 
 const mailReply = defineTool({
-  name: 'mail_reply',
+  name: 'outlook_mail_reply',
   description:
     'Create a draft reply (or reply-all when `all: true`) to a message. Never sends; the draft lives in Drafts for the human to review. Returns the draft id and a compose URL.',
   parameters: Params,

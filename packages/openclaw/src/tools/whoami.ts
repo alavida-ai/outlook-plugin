@@ -21,7 +21,7 @@ interface WhoamiResult {
 }
 
 const whoami = defineTool({
-  name: 'whoami',
+  name: 'outlook_whoami',
   description:
     "Display the signed-in user's basic profile (display name, email, job title, department, office). Read-only.",
   parameters: Type.Object({}),

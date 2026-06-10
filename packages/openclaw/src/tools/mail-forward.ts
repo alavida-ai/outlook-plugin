@@ -30,7 +30,7 @@ const Params = Type.Object({
 });
 
 const mailForward = defineTool({
-  name: 'mail_forward',
+  name: 'outlook_mail_forward',
   description:
     "Create a draft forward of a message. Never sends. Graph prepends `comment` above the original; the draft lives in Drafts for the human to review. Returns the draft id and a compose URL.",
   parameters: Params,

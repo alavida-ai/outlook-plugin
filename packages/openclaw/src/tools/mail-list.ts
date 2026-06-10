@@ -50,9 +50,9 @@ const Params = Type.Object({
 });
 
 const mailList = defineTool({
-  name: 'mail_list',
+  name: 'outlook_mail_list',
   description:
-    "List messages in a folder (default: inbox). Read-only. Returns id, subject, from, receivedDateTime, isRead, hasAttachments, bodyPreview and webLink for each message — chain id into mail_read for the full body.",
+    "List messages in a folder (default: inbox). Read-only. Returns id, subject, from, receivedDateTime, isRead, isDraft, hasAttachments, bodyPreview, and an inboxLink (outlook.cloud.microsoft URL that opens the inbox layout with the message selected — share with the user when they want to open the message). Inbound mail less than 30 minutes old is filtered out as a safety measure against one-time passwords leaking into the agent context. Chain id into outlook_mail_read for the full body.",
   parameters: Params,
   async execute(params: Static<typeof Params>, config) {
     const client = getClient(config);
@@ -66,6 +66,19 @@ const mailList = defineTool({
       focused: params.focused,
       other: params.other,
     });
+    // Batch-translate REST ids to restImmutableEntryId so we can surface the
+    // new-Outlook inbox URL alongside the legacy OWA `webLink`. One round trip.
+    const restIds = page.results
+      .map((m) => m.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    let inboxLinks: Record<string, string | null> = {};
+    if (restIds.length > 0) {
+      try {
+        inboxLinks = await client.mail.inboxLinks(restIds);
+      } catch {
+        // Translation failures are non-fatal — fall back to webLink only.
+      }
+    }
     return {
       messages: page.results.map((m) => ({
         id: m.id ?? null,
@@ -73,9 +86,11 @@ const mailList = defineTool({
         from: m.from?.emailAddress?.address ?? null,
         receivedDateTime: m.receivedDateTime ?? null,
         isRead: m.isRead ?? null,
+        isDraft: m.isDraft ?? null,
         hasAttachments: m.hasAttachments ?? null,
         bodyPreview: m.bodyPreview ?? null,
         webLink: m.webLink ?? null,
+        inboxLink: m.id ? (inboxLinks[m.id] ?? null) : null,
       })),
       count: page.count,
       nextLink: page.nextLink,

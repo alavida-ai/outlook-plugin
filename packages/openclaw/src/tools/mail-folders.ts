@@ -7,7 +7,7 @@ import { getClient } from '../client.js';
 import { defineTool } from '../register.js';
 
 const mailFolders = defineTool({
-  name: 'mail_folders',
+  name: 'outlook_mail_folders',
   description:
     "List the signed-in user's mail folders with unread and total item counts. Read-only.",
   parameters: Type.Object({}),

@@ -10,6 +10,7 @@ const HELP = `Usage: outlook calendar show <event-id> [options]
 Show a single event in full, including the body.
 
 Options:
+      --html           Render the raw HTML body (default: plain text).
       --account UPN    Pick a specific cached account.
       --json           Emit full JSON.
 `;
@@ -20,6 +21,7 @@ export async function run(argv: string[]): Promise<number> {
     parsed = parseArgs({
       args: argv,
       options: {
+        html: { type: 'boolean', default: false },
         account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
@@ -48,7 +50,12 @@ export async function run(argv: string[]): Promise<number> {
   const preferredUpn = resolveUpn(parsed.values.account);
   const ctx = makeContext({ preferredUpn });
   try {
-    const e = await ctx.outlook.calendar.get(eventId);
+    // Default to plain text — calendar bodies (especially Teams invites)
+    // are mostly HTML chrome that's noise in a terminal. --html opts back
+    // in to the raw HTML.
+    const e = await ctx.outlook.calendar.get(eventId, {
+      preferText: !parsed.values.html,
+    });
     if (parsed.values.json) {
       printJson(e);
     } else {

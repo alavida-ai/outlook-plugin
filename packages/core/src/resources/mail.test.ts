@@ -1,12 +1,26 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@microsoft/microsoft-graph-client';
 
 import { OutlookClient } from '../client.js';
 import {
   composeLinkFromWebLink,
+  inboxLinkFromId,
   normaliseDateForFilter,
   sanitiseAttachmentName,
 } from './mail.js';
+
+/**
+ * Stand-in for the cheap `?$select=id,receivedDateTime,isDraft` pre-flight
+ * the resource fires before listAttachments / downloadAttachment /
+ * reply / forward to enforce the inbound-mail age filter. Use this when a
+ * test doesn't care about the freshness check itself — it just needs the
+ * pre-flight to pass so the operation under test can run.
+ */
+const PRE_FLIGHT_OLD_INBOUND = {
+  id: 'pre-flight',
+  receivedDateTime: '2020-01-01T00:00:00Z',
+  isDraft: false,
+} as const;
 
 interface FakeRequest {
   api: ReturnType<typeof vi.fn>;
@@ -146,23 +160,32 @@ describe('MailResource.list', () => {
   });
 
   it('composes filter clauses', async () => {
-    const { graph, calls } = fakeGraph([{ value: [] }]);
-    const out = new OutlookClient(graph);
-    await out.mail.list({
-      limit: 5,
-      folder: 'sentitems',
-      unread: true,
-      from: 'boss@example.com',
-      after: '2026-05-01',
-      before: '2026-05-28',
-      focused: true,
-    });
-    expect(calls.capturedPaths[0]).toBe('/me/mailFolders/sentitems/messages');
-    const q = calls.capturedQueries[0] as Record<string, unknown>;
-    expect(q.$top).toBe(5);
-    expect(q.$filter).toBe(
-      "isRead eq false and from/emailAddress/address eq 'boss@example.com' and receivedDateTime ge 2026-05-01T00:00:00Z and receivedDateTime le 2026-05-28T00:00:00Z and inferenceClassification eq 'focused'",
-    );
+    // Pin the clock so the trailing quarantine cutoff is deterministic.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-29T00:00:00Z'));
+    try {
+      const { graph, calls } = fakeGraph([{ value: [] }]);
+      const out = new OutlookClient(graph);
+      await out.mail.list({
+        limit: 5,
+        folder: 'sentitems',
+        unread: true,
+        from: 'boss@example.com',
+        after: '2026-05-01',
+        before: '2026-05-28',
+        focused: true,
+      });
+      expect(calls.capturedPaths[0]).toBe('/me/mailFolders/sentitems/messages');
+      const q = calls.capturedQueries[0] as Record<string, unknown>;
+      expect(q.$top).toBe(5);
+      // Trailing clause exempts drafts and filters anything received in the
+      // last 30 minutes (the inbound-mail age filter).
+      expect(q.$filter).toBe(
+        "isRead eq false and from/emailAddress/address eq 'boss@example.com' and receivedDateTime ge 2026-05-01T00:00:00Z and receivedDateTime le 2026-05-28T00:00:00Z and inferenceClassification eq 'focused' and (isDraft eq true or receivedDateTime le 2026-05-28T23:30:00.000Z)",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('resolves a custom folder displayName', async () => {
@@ -222,6 +245,70 @@ describe('MailResource.get', () => {
   });
 });
 
+describe('inboxLinkFromId', () => {
+  it('builds the cloud.microsoft inbox URL with the id', () => {
+    expect(inboxLinkFromId('AAQkADg3NTE0NWVkLT')).toBe(
+      'https://outlook.cloud.microsoft/mail/inbox/id/AAQkADg3NTE0NWVkLT',
+    );
+  });
+  it('percent-encodes payload characters that need it', () => {
+    expect(inboxLinkFromId('AAQk+/=')).toBe(
+      'https://outlook.cloud.microsoft/mail/inbox/id/AAQk%2B%2F%3D',
+    );
+  });
+  it('returns null when id is missing', () => {
+    expect(inboxLinkFromId(null)).toBeNull();
+    expect(inboxLinkFromId(undefined)).toBeNull();
+    expect(inboxLinkFromId('')).toBeNull();
+  });
+});
+
+describe('MailResource.inboxLinks', () => {
+  it('POSTs translateExchangeIds with restId → restImmutableEntryId and builds URLs', async () => {
+    const { graph, calls } = fakeGraph([
+      {
+        value: [
+          { sourceId: 'AAMk-1', targetId: 'AAQk-1' },
+          { sourceId: 'AAMk-2', targetId: 'AAQk-2+/' },
+        ],
+      },
+    ]);
+    const out = new OutlookClient(graph);
+    const links = await out.mail.inboxLinks(['AAMk-1', 'AAMk-2']);
+    expect(calls.capturedPaths).toEqual(['/me/translateExchangeIds']);
+    expect(calls.capturedMethods).toEqual(['POST']);
+    expect(calls.capturedPosts[0]).toEqual({
+      inputIds: ['AAMk-1', 'AAMk-2'],
+      sourceIdType: 'restId',
+      targetIdType: 'restImmutableEntryId',
+    });
+    expect(links).toEqual({
+      'AAMk-1': 'https://outlook.cloud.microsoft/mail/inbox/id/AAQk-1',
+      'AAMk-2': 'https://outlook.cloud.microsoft/mail/inbox/id/AAQk-2%2B%2F',
+    });
+  });
+
+  it('returns null for ids Graph failed to translate', async () => {
+    const { graph } = fakeGraph([
+      { value: [{ sourceId: 'AAMk-1', targetId: 'AAQk-1' }] },
+    ]);
+    const out = new OutlookClient(graph);
+    const links = await out.mail.inboxLinks(['AAMk-1', 'AAMk-missing']);
+    expect(links).toEqual({
+      'AAMk-1': 'https://outlook.cloud.microsoft/mail/inbox/id/AAQk-1',
+      'AAMk-missing': null,
+    });
+  });
+
+  it('short-circuits with empty input', async () => {
+    const { graph, calls } = fakeGraph([]);
+    const out = new OutlookClient(graph);
+    const links = await out.mail.inboxLinks([]);
+    expect(links).toEqual({});
+    expect(calls.capturedPaths).toEqual([]); // no API call
+  });
+});
+
 describe('MailResource.search', () => {
   it('quotes the query and uses $search', async () => {
     const { graph, calls } = fakeGraph([{ value: [{ id: 'r1' }] }]);
@@ -258,6 +345,7 @@ describe('MailResource.listFolders', () => {
 describe('MailResource.listAttachments', () => {
   it('hits /me/messages/<id>/attachments with select', async () => {
     const { graph, calls } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       {
         value: [
           { id: 'a1', name: 'file.pdf', contentType: 'application/pdf', size: 100, isInline: false },
@@ -266,7 +354,10 @@ describe('MailResource.listAttachments', () => {
     ]);
     const out = new OutlookClient(graph);
     const page = await out.mail.listAttachments('msg-1');
-    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1/attachments']);
+    expect(calls.capturedPaths).toEqual([
+      '/me/messages/msg-1',
+      '/me/messages/msg-1/attachments',
+    ]);
     expect(page.results[0]?.name).toBe('file.pdf');
   });
 });
@@ -275,6 +366,7 @@ describe('MailResource.downloadAttachment', () => {
   it('decodes contentBytes and returns metadata', async () => {
     const payload = Buffer.from('hello world');
     const { graph, calls } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       {
         '@odata.type': '#microsoft.graph.fileAttachment',
         id: 'a1',
@@ -285,7 +377,10 @@ describe('MailResource.downloadAttachment', () => {
     ]);
     const out = new OutlookClient(graph);
     const result = await out.mail.downloadAttachment('msg-1', 'a1');
-    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1/attachments/a1']);
+    expect(calls.capturedPaths).toEqual([
+      '/me/messages/msg-1',
+      '/me/messages/msg-1/attachments/a1',
+    ]);
     expect(result.name).toBe('hello.txt');
     expect(result.contentType).toBe('text/plain');
     expect(result.size).toBe(payload.byteLength);
@@ -293,6 +388,7 @@ describe('MailResource.downloadAttachment', () => {
   });
   it('rejects non-fileAttachment kinds', async () => {
     const { graph } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       { '@odata.type': '#microsoft.graph.itemAttachment', id: 'a2', name: 'card' },
     ]);
     const out = new OutlookClient(graph);
@@ -302,6 +398,7 @@ describe('MailResource.downloadAttachment', () => {
   });
   it('sanitises the returned name', async () => {
     const { graph } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       {
         '@odata.type': '#microsoft.graph.fileAttachment',
         id: 'a3',
@@ -313,6 +410,125 @@ describe('MailResource.downloadAttachment', () => {
     const out = new OutlookClient(graph);
     const r = await out.mail.downloadAttachment('m', 'a3');
     expect(r.name).toBe('passwd');
+  });
+});
+
+describe('MailResource — inbound-mail age filter', () => {
+  // Pin the clock so the cutoff is deterministic across every test in this
+  // block. Cutoff = system time − 30 min.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-29T12:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // 30-min cutoff at 12:00Z → 11:30Z.
+  const FRESH_RECEIVED = '2026-05-29T11:50:00Z'; // 10 min ago — quarantined
+  const OLD_RECEIVED = '2026-05-29T10:00:00Z'; //  2 h ago — allowed
+
+  it('list: drafts are exempt; non-draft fresh mail is filtered server-side', async () => {
+    const { graph, calls } = fakeGraph([{ value: [] }]);
+    const out = new OutlookClient(graph);
+    await out.mail.list();
+    const q = calls.capturedQueries[0] as Record<string, unknown>;
+    expect(q.$filter).toBe(
+      '(isDraft eq true or receivedDateTime le 2026-05-29T11:30:00.000Z)',
+    );
+  });
+
+  it('get: refuses fresh non-draft messages with MailQuarantinedError', async () => {
+    const { graph } = fakeGraph([
+      { id: 'msg-fresh', isDraft: false, receivedDateTime: FRESH_RECEIVED, body: { content: 'OTP: 123456' } },
+    ]);
+    const out = new OutlookClient(graph);
+    await expect(out.mail.get('msg-fresh')).rejects.toThrow(/safety window/i);
+  });
+
+  it('get: allows fresh drafts (the user is composing them)', async () => {
+    const { graph } = fakeGraph([
+      { id: 'd1', isDraft: true, receivedDateTime: FRESH_RECEIVED, body: { content: 'my draft' } },
+    ]);
+    const out = new OutlookClient(graph);
+    const msg = await out.mail.get('d1');
+    expect(msg.body?.content).toBe('my draft');
+  });
+
+  it('get: allows older non-draft messages', async () => {
+    const { graph } = fakeGraph([
+      { id: 'm1', isDraft: false, receivedDateTime: OLD_RECEIVED, body: { content: 'old mail' } },
+    ]);
+    const out = new OutlookClient(graph);
+    const msg = await out.mail.get('m1');
+    expect(msg.body?.content).toBe('old mail');
+  });
+
+  it('search: drops fresh non-draft hits; keeps drafts and older hits', async () => {
+    const { graph } = fakeGraph([
+      {
+        value: [
+          { id: 'fresh', isDraft: false, receivedDateTime: FRESH_RECEIVED, subject: 'OTP: 123456' },
+          { id: 'draft', isDraft: true, receivedDateTime: FRESH_RECEIVED, subject: 'My draft' },
+          { id: 'old', isDraft: false, receivedDateTime: OLD_RECEIVED, subject: 'Old mail' },
+        ],
+      },
+    ]);
+    const out = new OutlookClient(graph);
+    const page = await out.mail.search({ query: 'anything' });
+    expect(page.count).toBe(2);
+    expect(page.results.map((r) => r.id)).toEqual(['draft', 'old']);
+  });
+
+  it('reply: pre-flight refuses fresh non-draft; no draft is created', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'fresh', isDraft: false, receivedDateTime: FRESH_RECEIVED },
+    ]);
+    const out = new OutlookClient(graph);
+    await expect(out.mail.reply('fresh', { body: 'hi' })).rejects.toThrow(
+      /safety window/i,
+    );
+    // Only the pre-flight GET fired — no POST to createReply.
+    expect(calls.capturedMethods).toEqual(['GET']);
+  });
+
+  it('forward: pre-flight refuses fresh non-draft; no draft is created', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'fresh', isDraft: false, receivedDateTime: FRESH_RECEIVED },
+    ]);
+    const out = new OutlookClient(graph);
+    await expect(
+      out.mail.forward('fresh', { to: ['x@y.com'] }),
+    ).rejects.toThrow(/safety window/i);
+    expect(calls.capturedMethods).toEqual(['GET']);
+  });
+
+  it('downloadAttachment: pre-flight refuses fresh non-draft; bytes are never fetched', async () => {
+    const { graph, calls } = fakeGraph([
+      { id: 'fresh', isDraft: false, receivedDateTime: FRESH_RECEIVED },
+    ]);
+    const out = new OutlookClient(graph);
+    await expect(
+      out.mail.downloadAttachment('fresh', 'aid-1'),
+    ).rejects.toThrow(/safety window/i);
+    // Only the pre-flight ran; we never hit the attachment endpoint.
+    expect(calls.capturedPaths).toEqual(['/me/messages/fresh']);
+  });
+
+  it('downloadAttachment: pre-flight passes for drafts (user attaching their own file)', async () => {
+    const { graph } = fakeGraph([
+      { id: 'd', isDraft: true, receivedDateTime: FRESH_RECEIVED },
+      {
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        id: 'a',
+        name: 'doc.pdf',
+        contentType: 'application/pdf',
+        contentBytes: Buffer.from('x').toString('base64'),
+      },
+    ]);
+    const out = new OutlookClient(graph);
+    const r = await out.mail.downloadAttachment('d', 'a');
+    expect(r.name).toBe('doc.pdf');
   });
 });
 
@@ -406,16 +622,18 @@ describe('MailResource.reply', () => {
       bccRecipients: [],
     };
     const { graph, calls } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       seeded,
       { id: 'draft-reply', subject: 'RE: hi' },
     ]);
     const out = new OutlookClient(graph);
     const summary = await out.mail.reply('msg-1', { body: 'Got it.', html: false });
     expect(calls.capturedPaths).toEqual([
+      '/me/messages/msg-1',
       '/me/messages/msg-1/createReply',
       '/me/messages/draft-reply',
     ]);
-    expect(calls.capturedMethods).toEqual(['POST', 'PATCH']);
+    expect(calls.capturedMethods).toEqual(['GET', 'POST', 'PATCH']);
     expect(calls.capturedPosts[0]).toEqual({});
     expect(calls.capturedPatches[0]).toMatchObject({
       body: { contentType: 'Text', content: 'Got it.' },
@@ -429,18 +647,20 @@ describe('MailResource.reply', () => {
 
   it('routes to createReplyAll when replyAll=true', async () => {
     const { graph, calls } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       { id: 'd', subject: 's', toRecipients: [], ccRecipients: [], bccRecipients: [] },
       { id: 'd' },
     ]);
     const out = new OutlookClient(graph);
     await out.mail.reply('m', { body: 'b', replyAll: true });
-    expect(calls.capturedPaths[0]).toBe('/me/messages/m/createReplyAll');
+    expect(calls.capturedPaths[1]).toBe('/me/messages/m/createReplyAll');
   });
 });
 
 describe('MailResource.forward', () => {
   it('POSTs createForward with comment + recipients', async () => {
     const { graph, calls } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       {
         id: 'fwd-1',
         subject: 'FW: hi',
@@ -456,8 +676,11 @@ describe('MailResource.forward', () => {
       cc: ['cc@example.com'],
       comment: 'fyi',
     });
-    expect(calls.capturedPaths).toEqual(['/me/messages/msg-1/createForward']);
-    expect(calls.capturedMethods).toEqual(['POST']);
+    expect(calls.capturedPaths).toEqual([
+      '/me/messages/msg-1',
+      '/me/messages/msg-1/createForward',
+    ]);
+    expect(calls.capturedMethods).toEqual(['GET', 'POST']);
     expect(calls.capturedPosts[0]).toMatchObject({
       comment: 'fyi',
       toRecipients: [{ emailAddress: { address: 'next@example.com' } }],
@@ -469,6 +692,7 @@ describe('MailResource.forward', () => {
 
   it('defaults comment to empty string', async () => {
     const { graph, calls } = fakeGraph([
+      PRE_FLIGHT_OLD_INBOUND,
       { id: 'f', subject: 'FW', toRecipients: [], ccRecipients: [], bccRecipients: [] },
     ]);
     const out = new OutlookClient(graph);

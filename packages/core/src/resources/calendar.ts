@@ -11,26 +11,6 @@ import type {
 
 import { liftGraphError } from '../graph/errors.js';
 
-/** Preset recurrence keywords surfaced by `calendar create`. */
-export const RECURRENCE_PRESETS: ReadonlySet<RecurrencePreset> = new Set([
-  'daily',
-  'weekdays',
-  'weekly',
-  'monthly',
-  'yearly',
-]);
-
-export type RecurrencePreset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly';
-
-/** Mirror of the Python `ATTENDEE_RESPONSES` constant. */
-export const ATTENDEE_RESPONSES: ReadonlySet<AttendeeResponse> = new Set([
-  'accept',
-  'decline',
-  'tentative',
-]);
-
-export type AttendeeResponse = 'accept' | 'decline' | 'tentative';
-
 /** Availability view legend: 0=free, 1=tentative, 2=busy, 3=OOO, 4=working-elsewhere. */
 export const AVAILABILITY_LEGEND =
   '0=free, 1=tentative, 2=busy, 3=out-of-office, 4=working-elsewhere';
@@ -72,6 +52,16 @@ export interface PageEnvelope<T> {
   nextLink: string | null;
 }
 
+export interface GetEventOptions {
+  /**
+   * If true, send `Prefer: outlook.body-content-type="text"` so Graph
+   * returns the body as plain text rather than HTML. Useful for terminal
+   * rendering where HTML tags are noise. Default: false (Graph default
+   * is HTML).
+   */
+  preferText?: boolean;
+}
+
 export interface ListEventsOptions {
   /** Window start ISO (inclusive). Default: now. */
   after?: string;
@@ -79,47 +69,6 @@ export interface ListEventsOptions {
   before?: string;
   /** Max events to return. Default: 50. */
   limit?: number;
-}
-
-export interface CreateEventInput {
-  subject: string;
-  /** ISO 8601 start (e.g. `2026-04-15T09:00`). */
-  start: string;
-  /** ISO 8601 end. */
-  end: string;
-  /** Optional attendees (required type). */
-  attendees?: string[];
-  location?: string;
-  /** Body content (HTML by default). */
-  body?: string;
-  /** Body content-type — defaults to 'HTML'. */
-  bodyContentType?: 'HTML' | 'Text';
-  isAllDay?: boolean;
-  /** Add a Teams meeting link. */
-  isOnlineMeeting?: boolean;
-  /** Recurrence preset. */
-  recurrence?: RecurrencePreset;
-  /** IANA timezone for start/end. Defaults to 'UTC'. */
-  timeZone?: string;
-}
-
-export interface UpdateEventInput {
-  subject?: string;
-  /** Must be paired with `end` if either is supplied. */
-  start?: string;
-  end?: string;
-  location?: string;
-  body?: string;
-  bodyContentType?: 'HTML' | 'Text';
-  /** IANA timezone for any patched start/end. Defaults to 'UTC'. */
-  timeZone?: string;
-}
-
-export interface RespondInput {
-  response: AttendeeResponse;
-  comment?: string;
-  /** Notify the organiser. Defaults to true. */
-  sendResponse?: boolean;
 }
 
 export interface AvailabilityInput {
@@ -157,28 +106,6 @@ export interface AvailabilityResult {
 interface RawPageResponse<T> {
   value?: T[];
   '@odata.nextLink'?: string;
-}
-
-interface RecurrencePattern {
-  type:
-    | 'daily'
-    | 'weekly'
-    | 'absoluteMonthly'
-    | 'absoluteYearly';
-  interval: number;
-  daysOfWeek?: string[];
-  dayOfMonth?: number;
-  month?: number;
-}
-
-interface RecurrenceRange {
-  type: 'noEnd';
-  startDate: string;
-}
-
-interface PatternedRecurrence {
-  pattern: RecurrencePattern;
-  range: RecurrenceRange;
 }
 
 const EVENT_SELECT_FIELDS = [
@@ -224,82 +151,6 @@ export function normaliseIso(s: string): string {
     if (colons === 1) v += ':00';
   }
   return v;
-}
-
-/**
- * Day-of-week names Graph expects for the `weekly` recurrence pattern. Index
- * matches JavaScript's `Date.prototype.getUTCDay()` returning 0=Sunday.
- */
-const DAYS_OF_WEEK: readonly string[] = [
-  'sunday',
-  'monday',
-  'tuesday',
-  'wednesday',
-  'thursday',
-  'friday',
-  'saturday',
-];
-
-/** Extract the day-of-week (Graph lower-case form) for an ISO datetime. */
-function dayOfWeekOf(iso: string): string {
-  // ISO without Z is parsed as local time in JS; force UTC so the mapping is stable.
-  const parsed = new Date(iso + 'Z');
-  if (Number.isNaN(parsed.getTime())) {
-    // Fallback: derive numerically. Doesn't happen in practice but keeps tests
-    // honest if the consumer passes garbage.
-    return 'monday';
-  }
-  const idx = parsed.getUTCDay();
-  return DAYS_OF_WEEK[idx] ?? 'monday';
-}
-
-function buildRecurrence(
-  preset: RecurrencePreset,
-  startIso: string,
-): PatternedRecurrence {
-  const startDate = startIso.slice(0, 10);
-  const day = Number.parseInt(startIso.slice(8, 10), 10);
-  const month = Number.parseInt(startIso.slice(5, 7), 10);
-  switch (preset) {
-    case 'daily':
-      return {
-        pattern: { type: 'daily', interval: 1 },
-        range: { type: 'noEnd', startDate },
-      };
-    case 'weekdays':
-      return {
-        pattern: {
-          type: 'weekly',
-          interval: 1,
-          daysOfWeek: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-        },
-        range: { type: 'noEnd', startDate },
-      };
-    case 'weekly':
-      return {
-        pattern: {
-          type: 'weekly',
-          interval: 1,
-          daysOfWeek: [dayOfWeekOf(startIso)],
-        },
-        range: { type: 'noEnd', startDate },
-      };
-    case 'monthly':
-      return {
-        pattern: { type: 'absoluteMonthly', interval: 1, dayOfMonth: day },
-        range: { type: 'noEnd', startDate },
-      };
-    case 'yearly':
-      return {
-        pattern: {
-          type: 'absoluteYearly',
-          interval: 1,
-          month,
-          dayOfMonth: day,
-        },
-        range: { type: 'noEnd', startDate },
-      };
-  }
 }
 
 function attendeeSummaryOf(a: Attendee): AttendeeSummary {
@@ -415,153 +266,14 @@ export class CalendarResource {
   }
 
   /** GET /me/events/<id> — single event in full (with body). */
-  async get(eventId: string): Promise<EventDetail> {
+  async get(eventId: string, options: GetEventOptions = {}): Promise<EventDetail> {
     try {
-      const e = (await this.graph
-        .api(`/me/events/${encodeURIComponent(eventId)}`)
-        .get()) as Event;
-      return flattenEventDetail(e);
-    } catch (err) {
-      throw liftGraphError(err);
-    }
-  }
-
-  /**
-   * POST /me/events — create an event. Sends invites to attendees by default
-   * (this is Graph's behaviour on `/me/events`).
-   */
-  async create(input: CreateEventInput): Promise<EventDetail> {
-    const tz = input.timeZone ?? 'UTC';
-    const startIso = normaliseIso(input.start);
-    const endIso = normaliseIso(input.end);
-
-    const payload: Record<string, unknown> = {
-      subject: input.subject,
-      start: { dateTime: startIso, timeZone: tz },
-      end: { dateTime: endIso, timeZone: tz },
-    };
-    if (input.body !== undefined) {
-      payload.body = {
-        contentType: input.bodyContentType ?? 'HTML',
-        content: input.body,
-      };
-    }
-    if (input.location) {
-      payload.location = { displayName: input.location };
-    }
-    if (input.attendees && input.attendees.length > 0) {
-      payload.attendees = input.attendees.map((address) => ({
-        emailAddress: { address },
-        type: 'required',
-      }));
-    }
-    if (input.isAllDay) {
-      payload.isAllDay = true;
-    }
-    if (input.isOnlineMeeting) {
-      payload.isOnlineMeeting = true;
-      payload.onlineMeetingProvider = 'teamsForBusiness';
-    }
-    if (input.recurrence) {
-      if (!RECURRENCE_PRESETS.has(input.recurrence)) {
-        throw new Error(
-          `Unknown recurrence preset '${input.recurrence}'. Valid: ${Array.from(RECURRENCE_PRESETS).join(', ')}.`,
-        );
+      let req = this.graph.api(`/me/events/${encodeURIComponent(eventId)}`);
+      if (options.preferText) {
+        req = req.header('Prefer', 'outlook.body-content-type="text"');
       }
-      payload.recurrence = buildRecurrence(input.recurrence, startIso);
-    }
-
-    try {
-      const created = (await this.graph.api('/me/events').post(payload)) as Event;
-      return flattenEventDetail(created);
-    } catch (err) {
-      throw liftGraphError(err);
-    }
-  }
-
-  /**
-   * PATCH /me/events/<id> — patch only the fields the caller supplied.
-   *
-   * `start` and `end` must be supplied together. Graph rejects partial
-   * updates of the start/end pair, so we surface a clear error before
-   * making the call.
-   */
-  async update(eventId: string, input: UpdateEventInput): Promise<EventDetail> {
-    const hasStart = input.start !== undefined;
-    const hasEnd = input.end !== undefined;
-    if (hasStart !== hasEnd) {
-      throw new Error(
-        'calendar update: --start and --end must be supplied together.',
-      );
-    }
-
-    const tz = input.timeZone ?? 'UTC';
-    const payload: Record<string, unknown> = {};
-    if (input.subject !== undefined) payload.subject = input.subject;
-    if (hasStart && hasEnd) {
-      payload.start = { dateTime: normaliseIso(input.start as string), timeZone: tz };
-      payload.end = { dateTime: normaliseIso(input.end as string), timeZone: tz };
-    }
-    if (input.location !== undefined) {
-      payload.location = { displayName: input.location };
-    }
-    if (input.body !== undefined) {
-      payload.body = {
-        contentType: input.bodyContentType ?? 'HTML',
-        content: input.body,
-      };
-    }
-
-    try {
-      const updated = (await this.graph
-        .api(`/me/events/${encodeURIComponent(eventId)}`)
-        .patch(payload)) as Event;
-      return flattenEventDetail(updated);
-    } catch (err) {
-      throw liftGraphError(err);
-    }
-  }
-
-  /**
-   * DELETE /me/events/<id> — cancel the event. Notifies attendees if any.
-   * Different from mail delete: this is a real cancellation, not a soft-move.
-   */
-  async delete(eventId: string): Promise<{ id: string; deleted: true }> {
-    try {
-      await this.graph.api(`/me/events/${encodeURIComponent(eventId)}`).delete();
-      return { id: eventId, deleted: true };
-    } catch (err) {
-      throw liftGraphError(err);
-    }
-  }
-
-  /**
-   * POST /me/events/<id>/{accept|decline|tentativelyAccept} — reply to an
-   * incoming meeting invite. Body carries `{ comment, sendResponse }`.
-   */
-  async respond(
-    eventId: string,
-    input: RespondInput,
-  ): Promise<{ id: string; response: AttendeeResponse; sentResponse: boolean }> {
-    if (!ATTENDEE_RESPONSES.has(input.response)) {
-      throw new Error(
-        `Unknown response '${input.response}'. Valid: ${Array.from(ATTENDEE_RESPONSES).join(', ')}.`,
-      );
-    }
-    const sendResponse = input.sendResponse ?? true;
-    const action =
-      input.response === 'accept'
-        ? 'accept'
-        : input.response === 'decline'
-          ? 'decline'
-          : 'tentativelyAccept';
-    const body: Record<string, unknown> = { sendResponse };
-    if (input.comment !== undefined) body.comment = input.comment;
-    try {
-      await this.graph
-        .api(`/me/events/${encodeURIComponent(eventId)}/${action}`)
-        .post(body);
-      return { id: eventId, response: input.response, sentResponse: sendResponse };
+      const e = (await req.get()) as Event;
+      return flattenEventDetail(e);
     } catch (err) {
       throw liftGraphError(err);
     }

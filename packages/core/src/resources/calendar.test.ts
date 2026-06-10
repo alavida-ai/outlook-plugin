@@ -7,6 +7,7 @@ import { normaliseIso } from './calendar.js';
 interface FakeRequest {
   capturedPaths: string[];
   capturedQueries: Array<Record<string, unknown>>;
+  capturedHeaders: Array<[string, string]>;
   capturedPosts: unknown[];
   capturedPatches: unknown[];
   capturedMethods: string[];
@@ -21,6 +22,7 @@ function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } 
   const calls: FakeRequest = {
     capturedPaths: [],
     capturedQueries: [],
+    capturedHeaders: [],
     capturedPosts: [],
     capturedPatches: [],
     capturedMethods: [],
@@ -31,7 +33,8 @@ function fakeGraph(responses: unknown[]): { graph: Client; calls: FakeRequest } 
       calls.capturedQueries.push(q);
       return chain;
     },
-    header() {
+    header(k: string, v: string) {
+      calls.capturedHeaders.push([k, v]);
       return chain;
     },
     async get() {
@@ -150,170 +153,27 @@ describe('CalendarResource.get', () => {
     const out = new OutlookClient(graph);
     const e = await out.calendar.get('evt-1');
     expect(calls.capturedPaths).toEqual(['/me/events/evt-1']);
+    expect(calls.capturedHeaders).toEqual([]);
     expect(e.subject).toBe('Standup');
     expect(e.body).toBe('<p>agenda</p>');
     expect(e.bodyContentType).toBe('HTML');
     expect(e.attendees[0]?.response).toBe('accepted');
   });
-});
 
-describe('CalendarResource.create', () => {
-  it('POSTs /me/events with date/timezone envelope and attendees', async () => {
+  it('sends Prefer: text body-content-type when preferText is set', async () => {
     const { graph, calls } = fakeGraph([
       {
-        id: 'evt-new',
-        subject: 'Demo',
-        start: { dateTime: '2026-04-15T09:00:00.0000000', timeZone: 'UTC' },
-        end: { dateTime: '2026-04-15T10:00:00.0000000', timeZone: 'UTC' },
+        id: 'evt-1',
+        body: { contentType: 'Text', content: 'agenda (plain text)' },
       },
     ]);
     const out = new OutlookClient(graph);
-    const created = await out.calendar.create({
-      subject: 'Demo',
-      start: '2026-04-15T09:00',
-      end: '2026-04-15T10:00',
-      attendees: ['a@b.com'],
-      location: 'Room 1',
-      body: 'agenda',
-      bodyContentType: 'Text',
-      isOnlineMeeting: true,
-    });
-    expect(calls.capturedPaths).toEqual(['/me/events']);
-    expect(calls.capturedMethods).toEqual(['POST']);
-    const body = calls.capturedPosts[0] as Record<string, unknown>;
-    expect(body.subject).toBe('Demo');
-    expect(body.start).toEqual({ dateTime: '2026-04-15T09:00:00', timeZone: 'UTC' });
-    expect(body.end).toEqual({ dateTime: '2026-04-15T10:00:00', timeZone: 'UTC' });
-    expect(body.attendees).toEqual([
-      { emailAddress: { address: 'a@b.com' }, type: 'required' },
+    const e = await out.calendar.get('evt-1', { preferText: true });
+    expect(calls.capturedHeaders).toEqual([
+      ['Prefer', 'outlook.body-content-type="text"'],
     ]);
-    expect(body.location).toEqual({ displayName: 'Room 1' });
-    expect(body.body).toEqual({ contentType: 'Text', content: 'agenda' });
-    expect(body.isOnlineMeeting).toBe(true);
-    expect(body.onlineMeetingProvider).toBe('teamsForBusiness');
-    expect(created.id).toBe('evt-new');
-  });
-
-  it('builds a weekdays recurrence preset', async () => {
-    const { graph, calls } = fakeGraph([{ id: 'evt-rec', subject: 'Daily' }]);
-    const out = new OutlookClient(graph);
-    await out.calendar.create({
-      subject: 'Daily',
-      start: '2026-04-15T09:00',
-      end: '2026-04-15T09:30',
-      recurrence: 'weekdays',
-    });
-    const body = calls.capturedPosts[0] as Record<string, unknown>;
-    expect(body.recurrence).toEqual({
-      pattern: {
-        type: 'weekly',
-        interval: 1,
-        daysOfWeek: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      },
-      range: { type: 'noEnd', startDate: '2026-04-15' },
-    });
-  });
-
-  it('builds a monthly recurrence preset with dayOfMonth from start', async () => {
-    const { graph, calls } = fakeGraph([{ id: 'evt-rec' }]);
-    const out = new OutlookClient(graph);
-    await out.calendar.create({
-      subject: 'Monthly',
-      start: '2026-04-15T09:00',
-      end: '2026-04-15T09:30',
-      recurrence: 'monthly',
-    });
-    const body = calls.capturedPosts[0] as Record<string, unknown>;
-    expect(body.recurrence).toEqual({
-      pattern: { type: 'absoluteMonthly', interval: 1, dayOfMonth: 15 },
-      range: { type: 'noEnd', startDate: '2026-04-15' },
-    });
-  });
-});
-
-describe('CalendarResource.update', () => {
-  it('PATCHes only the supplied fields', async () => {
-    const { graph, calls } = fakeGraph([
-      { id: 'evt-1', subject: 'Renamed' },
-    ]);
-    const out = new OutlookClient(graph);
-    await out.calendar.update('evt-1', {
-      subject: 'Renamed',
-      location: 'Room 2',
-    });
-    expect(calls.capturedPaths).toEqual(['/me/events/evt-1']);
-    expect(calls.capturedMethods).toEqual(['PATCH']);
-    expect(calls.capturedPatches[0]).toEqual({
-      subject: 'Renamed',
-      location: { displayName: 'Room 2' },
-    });
-  });
-
-  it('PATCHes start + end together', async () => {
-    const { graph, calls } = fakeGraph([{ id: 'evt-1' }]);
-    const out = new OutlookClient(graph);
-    await out.calendar.update('evt-1', {
-      start: '2026-04-15T10:00',
-      end: '2026-04-15T11:00',
-      timeZone: 'America/New_York',
-    });
-    const patch = calls.capturedPatches[0] as Record<string, unknown>;
-    expect(patch.start).toEqual({
-      dateTime: '2026-04-15T10:00:00',
-      timeZone: 'America/New_York',
-    });
-    expect(patch.end).toEqual({
-      dateTime: '2026-04-15T11:00:00',
-      timeZone: 'America/New_York',
-    });
-  });
-
-  it('rejects partial start/end updates', async () => {
-    const { graph } = fakeGraph([]);
-    const out = new OutlookClient(graph);
-    await expect(
-      out.calendar.update('evt-1', { start: '2026-04-15T10:00' }),
-    ).rejects.toThrow('start and --end');
-  });
-});
-
-describe('CalendarResource.delete', () => {
-  it('DELETEs /me/events/<id>', async () => {
-    const { graph, calls } = fakeGraph([undefined]);
-    const out = new OutlookClient(graph);
-    const r = await out.calendar.delete('evt-1');
-    expect(calls.capturedPaths).toEqual(['/me/events/evt-1']);
-    expect(calls.capturedMethods).toEqual(['DELETE']);
-    expect(r).toEqual({ id: 'evt-1', deleted: true });
-  });
-});
-
-describe('CalendarResource.respond', () => {
-  it('POSTs accept with comment + sendResponse', async () => {
-    const { graph, calls } = fakeGraph([undefined]);
-    const out = new OutlookClient(graph);
-    const r = await out.calendar.respond('evt-1', {
-      response: 'accept',
-      comment: 'see you there',
-    });
-    expect(calls.capturedPaths).toEqual(['/me/events/evt-1/accept']);
-    expect(calls.capturedPosts[0]).toEqual({
-      sendResponse: true,
-      comment: 'see you there',
-    });
-    expect(r).toEqual({
-      id: 'evt-1',
-      response: 'accept',
-      sentResponse: true,
-    });
-  });
-
-  it('routes tentative to tentativelyAccept', async () => {
-    const { graph, calls } = fakeGraph([undefined]);
-    const out = new OutlookClient(graph);
-    await out.calendar.respond('evt-1', { response: 'tentative', sendResponse: false });
-    expect(calls.capturedPaths).toEqual(['/me/events/evt-1/tentativelyAccept']);
-    expect(calls.capturedPosts[0]).toEqual({ sendResponse: false });
+    expect(e.body).toBe('agenda (plain text)');
+    expect(e.bodyContentType).toBe('Text');
   });
 });
 

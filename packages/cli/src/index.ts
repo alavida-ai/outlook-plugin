@@ -26,19 +26,9 @@ Commands:
   mail reply                 Create a draft reply (also --all).
   mail forward               Create a draft forward.
   mail add-attachment        Attach a file to a draft.
-  mail move                  Move a message to another folder.
-  mail delete                Soft-delete a message (to Deleted Items).
-  mail mark                  Mark a message read or unread.
-  mail flag                  Set the follow-up flag.
-  mail importance            Set the importance level.
   calendar list              List events in a date range (calendarView).
   calendar show              Show one event in full.
-  calendar create            Create an event.
-  calendar update            Update an event (PATCH).
-  calendar delete            Cancel an event (notifies attendees).
-  calendar respond           Accept/decline/tentatively-accept an invite.
   calendar availability      Free/busy across one or more users.
-  contacts list              (stub — not yet implemented).
 
 Global flags:
   --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
@@ -123,26 +113,6 @@ async function main(argv: string[]): Promise<number> {
       const { run } = await import('./commands/mail-add-attachment.js');
       return run(rest);
     }
-    if (second === 'move') {
-      const { run } = await import('./commands/mail-move.js');
-      return run(rest);
-    }
-    if (second === 'delete') {
-      const { run } = await import('./commands/mail-delete.js');
-      return run(rest);
-    }
-    if (second === 'mark') {
-      const { run } = await import('./commands/mail-mark.js');
-      return run(rest);
-    }
-    if (second === 'flag') {
-      const { run } = await import('./commands/mail-flag.js');
-      return run(rest);
-    }
-    if (second === 'importance') {
-      const { run } = await import('./commands/mail-importance.js');
-      return run(rest);
-    }
     eprintln(`Unknown mail subcommand: ${second ?? '(none)'}.`);
     return 1;
   }
@@ -156,36 +126,11 @@ async function main(argv: string[]): Promise<number> {
       const { run } = await import('./commands/calendar-show.js');
       return run(rest);
     }
-    if (second === 'create') {
-      const { run } = await import('./commands/calendar-create.js');
-      return run(rest);
-    }
-    if (second === 'update') {
-      const { run } = await import('./commands/calendar-update.js');
-      return run(rest);
-    }
-    if (second === 'delete') {
-      const { run } = await import('./commands/calendar-delete.js');
-      return run(rest);
-    }
-    if (second === 'respond') {
-      const { run } = await import('./commands/calendar-respond.js');
-      return run(rest);
-    }
     if (second === 'availability') {
       const { run } = await import('./commands/calendar-availability.js');
       return run(rest);
     }
     eprintln(`Unknown calendar subcommand: ${second ?? '(none)'}.`);
-    return 1;
-  }
-
-  if (first === 'contacts') {
-    if (second === 'list') {
-      const { run } = await import('./commands/contacts-list.js');
-      return run(rest);
-    }
-    eprintln(`Unknown contacts subcommand: ${second ?? '(none)'}.`);
     return 1;
   }
 

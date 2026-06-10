@@ -28,6 +28,13 @@ export type { AccessTokenResult, GetAccessTokenInput } from './auth/silent.js';
 export { loginDeviceCode } from './auth/device-code.js';
 export type { LoginDeviceCodeInput, LoginResult } from './auth/device-code.js';
 
+export { loginDeviceCodeInBackground } from './auth/device-code-background.js';
+export type {
+  LoginDeviceCodeBackgroundInput,
+  BackgroundDeviceCodeResult,
+  BackgroundDeviceCodeCompletion,
+} from './auth/device-code-background.js';
+
 export { logout } from './auth/logout.js';
 export type { LogoutInput } from './auth/logout.js';
 
@@ -44,6 +51,7 @@ export {
   WELL_KNOWN_FOLDERS,
   INLINE_ATTACHMENT_MAX_BYTES,
   composeLinkFromWebLink,
+  inboxLinkFromId,
   normaliseDateForFilter,
   sanitiseAttachmentName,
 } from './resources/mail.js';
@@ -66,8 +74,6 @@ export type {
 } from './resources/mail.js';
 export {
   CalendarResource,
-  RECURRENCE_PRESETS,
-  ATTENDEE_RESPONSES,
   AVAILABILITY_LEGEND,
   normaliseIso,
   flattenEvent,
@@ -76,12 +82,8 @@ export type {
   EventSummary,
   EventDetail,
   AttendeeSummary,
-  RecurrencePreset,
-  AttendeeResponse,
+  GetEventOptions,
   ListEventsOptions,
-  CreateEventInput,
-  UpdateEventInput,
-  RespondInput,
   AvailabilityInput,
   AvailabilityResult,
   AvailabilityScheduleSummary,
@@ -92,5 +94,6 @@ export {
   ThrottledError,
   ServerError,
   NetworkError,
+  MailQuarantinedError,
   liftGraphError,
 } from './graph/errors.js';
