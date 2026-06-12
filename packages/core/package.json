@@ -1,6 +1,6 @@
 {
   "name": "@alavida-ai/outlook-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Microsoft Graph wrapper + MSAL device-code auth for Alavida's Outlook stack. Pure library — no stdout/stderr, no process.exit.",
   "type": "module",
   "license": "UNLICENSED",
