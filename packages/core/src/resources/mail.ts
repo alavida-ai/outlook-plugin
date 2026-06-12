@@ -259,6 +259,9 @@ export function sanitiseAttachmentName(name: string | null | undefined): string 
   if (!name) return 'attachment';
   // Reject path components entirely.
   let s = name.split(/[\\/]/).pop() ?? '';
+  // Deliberately match control chars (NUL–US + DEL) to strip them from the
+  // filename — sanitisation is the whole point of this function.
+  // eslint-disable-next-line no-control-regex
   s = s.replace(/[\x00-\x1f\x7f]/g, '');
   s = s.replace(/^\.+/, '');
   return s || 'attachment';

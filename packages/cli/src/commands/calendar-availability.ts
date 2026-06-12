@@ -36,8 +36,6 @@ Other:
       --json           Emit full JSON envelope.
 `;
 
-const DEFAULT_FREE_SLOT_MIN_MINUTES = 30;
-
 export async function run(argv: string[]): Promise<number> {
   let parsed;
   try {

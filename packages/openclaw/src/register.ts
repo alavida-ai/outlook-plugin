@@ -52,6 +52,8 @@ export function readPluginConfig(api: OpenClawPluginApi): PluginConfig {
     tenantId: typeof raw.tenantId === 'string' ? raw.tenantId : undefined,
     tokenCachePath: typeof raw.tokenCachePath === 'string' ? raw.tokenCachePath : undefined,
     account: typeof raw.account === 'string' ? raw.account : undefined,
+    oauthRedirectUri:
+      typeof raw.oauthRedirectUri === 'string' ? raw.oauthRedirectUri : undefined,
   };
 }
 

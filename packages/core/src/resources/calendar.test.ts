@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Client } from '@microsoft/microsoft-graph-client';
+import type { Client } from '@microsoft/microsoft-graph-client';
 
 import { OutlookClient } from '../client.js';
 import { addDaysToDateStr, dateStringInTz, normaliseIso } from './calendar.js';

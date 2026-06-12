@@ -18,7 +18,7 @@ export interface StatusInput {
  * `preferredUpn` when they already know which mailbox they're asking about.
  */
 export async function status(input: StatusInput): Promise<AccountInfo | null> {
-  const { app, cache: _cache, preferredUpn } = input;
+  const { app, preferredUpn } = input;
   const accounts = await app.getTokenCache().getAllAccounts();
   if (accounts.length === 0) return null;
   try {

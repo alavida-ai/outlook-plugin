@@ -14,6 +14,14 @@ export interface PluginConfig {
   tokenCachePath?: string;
   account?: string;
   /**
+   * Public HTTPS redirect URI for the browser Authorization-Code flow. When
+   * set, `auth_login` returns a sign-in URL instead of a device code — required
+   * for tenants whose Conditional Access blocks device-code flow. Must exactly
+   * match a redirect URI registered in the Entra app. Leave unset to keep the
+   * device-code flow.
+   */
+  oauthRedirectUri?: string;
+  /**
    * Set by the OpenClaw plugin SDK via the tool-factory context. Used to scope
    * the default cache path to the agent's own state dir.
    */

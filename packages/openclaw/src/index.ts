@@ -18,6 +18,7 @@ import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { PluginConfig } from './client.js';
 import { readPluginConfig, registerTool, type ToolDescriptor } from './register.js';
+import { AUTH_CALLBACK_PATH, makeAuthCallbackHandler } from './auth-callback.js';
 
 import authLogin from './tools/auth-login.js';
 import authStatus from './tools/auth-status.js';
@@ -85,6 +86,12 @@ const configJsonSchema: any = Type.Object({
       description: 'UPN to use when multiple accounts are cached. Required for multi-account hosts.',
     }),
   ),
+  oauthRedirectUri: Type.Optional(
+    Type.String({
+      description:
+        'Public HTTPS redirect URI for the browser Authorization-Code (PKCE) sign-in flow, e.g. https://<gateway>.<tailnet>.ts.net/outlook/auth-callback. When set, outlook_auth_login returns a sign-in URL instead of a device code (required where Conditional Access blocks device-code flow). Must exactly match a redirect URI registered in the Entra app. Leave unset to keep the device-code flow.',
+    }),
+  ),
 });
 
 export default definePluginEntry({
@@ -98,6 +105,15 @@ export default definePluginEntry({
     for (const tool of TOOLS) {
       registerTool(api, tool, getConfig);
     }
+    // Browser Authorization-Code flow: Microsoft redirects the user's browser
+    // here after sign-in. Only this exact path is exposed publicly (Tailscale
+    // Funnel); `auth: 'plugin'` keeps it off the operator runtime scopes.
+    api.registerHttpRoute({
+      path: AUTH_CALLBACK_PATH,
+      auth: 'plugin',
+      match: 'exact',
+      handler: makeAuthCallbackHandler(),
+    });
   },
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PublicClientApplication } from '@azure/msal-node';
+import type { DeviceCodeRequest, PublicClientApplication } from '@azure/msal-node';
 
 import { InMemoryTokenCache } from './cache.js';
 import { loginDeviceCodeInBackground } from './device-code-background.js';
@@ -20,7 +20,7 @@ describe('loginDeviceCodeInBackground', () => {
     const pollingPromise = new Promise<void>((r) => {
       release = r;
     });
-    const acquireMock = vi.fn(async (req: any) => {
+    const acquireMock = vi.fn(async (req: DeviceCodeRequest) => {
       req.deviceCodeCallback({
         message: 'To sign in ... enter code ABCD1234 ...',
         userCode: 'ABCD1234',
@@ -57,7 +57,7 @@ describe('loginDeviceCodeInBackground', () => {
 
   it('completion resolves with {ok: false, reason} when MSAL rejects', async () => {
     const cache = new InMemoryTokenCache();
-    const acquireMock = vi.fn(async (req: any) => {
+    const acquireMock = vi.fn(async (req: DeviceCodeRequest) => {
       req.deviceCodeCallback({
         message: 'msg',
         userCode: 'CODE',
@@ -89,7 +89,7 @@ describe('loginDeviceCodeInBackground', () => {
   it('runs MSAL acquisition under cache.lock()', async () => {
     const cache = new InMemoryTokenCache();
     const lockSpy = vi.spyOn(cache, 'lock');
-    const acquireMock = vi.fn(async (req: any) => {
+    const acquireMock = vi.fn(async (req: DeviceCodeRequest) => {
       req.deviceCodeCallback({
         message: 'msg',
         userCode: 'CODE',

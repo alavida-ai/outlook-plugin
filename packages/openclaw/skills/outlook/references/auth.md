@@ -5,15 +5,55 @@ token cache per agent (at `<agentDir>/outlook-tokens.json`), so two agents
 on the same OpenClaw gateway can sign in as two different Microsoft users
 without crossing wires.
 
+## Two sign-in flows
+
+`outlook_auth_login` supports two flows. **The plugin picks automatically
+based on config** — the agent surface is the same either way:
+
+| Flow | When it's used | What the agent surfaces |
+| --- | --- | --- |
+| **Browser (Authorization Code + PKCE)** | `oauthRedirectUri` is set in plugin config | A single sign-in `authUrl` |
+| **Device code** | `oauthRedirectUri` is unset | A `verificationUrl` + 6-character `userCode` |
+
+The **browser flow is the primary path** and is required for tenants whose
+Conditional Access blocks device-code flow (Microsoft's recommended
+"Block Device Code Flow" baseline). The **device-code flow is the fallback**
+for clients without that restriction and for local development.
+
+Both flows return **immediately** with `status: "pending"` — neither blocks
+for sign-in — and both finish the same way: the human signs in, tokens land
+in this agent's cache, and you confirm with `outlook_auth_status`.
+
 ## Authenticating an agent (from inside the session)
 
-Call `outlook_auth_login` from the agent. The tool returns **immediately**
-with a verification URL and a 6-character user code — it does **not** block
-for sign-in:
+Call `outlook_auth_login` from the agent.
+
+**Browser flow** (when `oauthRedirectUri` is configured):
 
 ```jsonc
 {
   "status": "pending",
+  "flow": "browser",
+  "authUrl": "https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize?...",
+  "expiresAt": "2026-06-01T12:10:00Z",
+  "agentId": "alfred",
+  "cachePath": "/.../agents/alfred/agent/outlook-tokens.json",
+  "hint": "Open the URL in a browser and sign in. Then call outlook_auth_status to confirm."
+}
+```
+
+Surface `authUrl` to the human. They open it in any browser, sign in
+(subject to the tenant's MFA / Conditional Access), and Microsoft redirects
+their browser to the plugin's `/outlook/auth-callback` route, which redeems
+the code and writes tokens to **this agent's** cache. The link is
+single-use and expires after 10 minutes.
+
+**Device-code flow** (when `oauthRedirectUri` is unset):
+
+```jsonc
+{
+  "status": "pending",
+  "flow": "device",
   "verificationUrl": "https://microsoft.com/devicelogin",
   "userCode": "ABCD1234",
   "expiresAt": "2026-06-01T12:15:00Z",
@@ -25,8 +65,10 @@ for sign-in:
 
 Surface `verificationUrl` and `userCode` to the human. The human signs in
 on any device (phone is fine), enters the code, and authorises sign-in.
-Polling Microsoft happens in the background; once the human confirms
-sign-in is done, call `outlook_auth_status` to verify the token landed.
+Polling Microsoft happens in the background.
+
+In **both** flows, once the human confirms sign-in is done, call
+`outlook_auth_status` to verify the token landed.
 
 ```jsonc
 {
@@ -40,8 +82,10 @@ sign-in is done, call `outlook_auth_status` to verify the token landed.
 
 If `auth_status` still returns `not_authenticated` after the human says
 sign-in is done, either the human hasn't actually completed the flow (ask
-them to try again — codes expire after ~15 min) or Microsoft rejected the
-sign-in. Surface the failure and ask them to retry `outlook_auth_login`.
+them to try again — browser links expire after 10 min, device codes after
+~15 min) or Microsoft rejected the sign-in. The pending flow is single-use,
+so a fresh `outlook_auth_login` is needed for each attempt. Surface the
+failure and ask them to retry `outlook_auth_login`.
 
 ## Logging out
 
@@ -99,6 +143,52 @@ plugin configuration the operator sets once in
 When only one account is cached, this field is optional. When multiple
 accounts are cached and `account` is unset, tools throw
 `auth_ambiguous_account`.
+
+## Enabling the browser flow (operator config)
+
+Set `oauthRedirectUri` in plugin config to switch `outlook_auth_login` to
+the browser (Authorization Code + PKCE) flow. The value is the **public
+HTTPS callback URL** Microsoft will redirect to, and it must **exactly
+match** a redirect URI registered in the Entra app (the `Web` platform type
+allows no wildcards).
+
+```json
+{
+  "plugins": {
+    "outlook": {
+      "oauthRedirectUri": "https://<gateway>.<tailnet>.ts.net/outlook/auth-callback"
+    }
+  }
+}
+```
+
+The plugin serves the callback at `/outlook/auth-callback` (plugin-scoped
+auth, exact-match). To expose **only** that path publicly — keeping the rest
+of the gateway Tailnet-only — run on the gateway box:
+
+```bash
+tailscale funnel --bg --set-path /outlook/auth-callback \
+  http://127.0.0.1:18789/outlook/auth-callback
+tailscale funnel status   # prints the public *.ts.net URL
+```
+
+Tailscale auto-issues and auto-renews the TLS cert for the `*.ts.net` URL;
+end users do not need to be on the Tailnet. Then register that exact URL as
+a redirect URI in the Entra app (Authentication → Platform configurations →
+Add a platform → **Web**).
+
+Leave `oauthRedirectUri` unset to keep the device-code flow.
+
+### Browser-flow security model
+
+- **PKCE** — the code verifier never leaves the gateway; only its SHA-256
+  challenge is sent to Microsoft. The verifier is never returned to the
+  agent or written to any log.
+- **state** — a random CSRF token tied server-side to the initiating agent.
+  Single-use and 10-minute TTL; a replayed or expired callback is refused.
+- **nonce** — bound into the issued ID token and verified on receipt.
+- **Path isolation** — only `/outlook/auth-callback` is funnelled; every
+  other gateway path stays Tailnet-only.
 
 ## Multi-agent isolation
 

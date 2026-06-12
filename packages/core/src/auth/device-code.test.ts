@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PublicClientApplication } from '@azure/msal-node';
+import type { DeviceCodeRequest, PublicClientApplication } from '@azure/msal-node';
 
 import { InMemoryTokenCache } from './cache.js';
 import { loginDeviceCode } from './device-code.js';
@@ -8,7 +8,7 @@ describe('loginDeviceCode', () => {
   it('forwards the device-code message via the callback and resolves with the result', async () => {
     const cache = new InMemoryTokenCache();
     const messages: string[] = [];
-    const acquireMock = vi.fn(async (req: any) => {
+    const acquireMock = vi.fn(async (req: DeviceCodeRequest) => {
       req.deviceCodeCallback({
         message: 'To sign in, use a web browser to open https://microsoft.com/devicelogin and enter the code AB12CD34',
         userCode: 'AB12CD34',

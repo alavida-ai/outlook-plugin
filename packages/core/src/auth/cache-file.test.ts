@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,7 +40,6 @@ describe('FileTokenCache', () => {
     await cache.save(blob);
     const fileStat = await stat(join(dir, 'tokens.json'));
     expect(fileStat.mode & 0o777).toBe(0o600);
-    const dirStat = await stat(dir);
     // Parent dir mode may vary depending on mkdtemp default; cache should
     // tighten the dir it owns (a fresh subdir under `dir`, set explicitly
     // when the file is first written into a missing tree).
