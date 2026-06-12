@@ -18,6 +18,9 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      # Build first so dependent packages (cli, openclaw) can resolve
+      # @alavida-ai/outlook-core's emitted d.ts during typecheck.
+      - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
