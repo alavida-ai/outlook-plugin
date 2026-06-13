@@ -149,8 +149,7 @@ accounts are cached and `account` is unset, tools throw
 Set `oauthRedirectUri` in plugin config to switch `outlook_auth_login` to
 the browser (Authorization Code + PKCE) flow. The value is the **public
 HTTPS callback URL** Microsoft will redirect to, and it must **exactly
-match** a redirect URI registered in the Entra app (the `Web` platform type
-allows no wildcards).
+match** a redirect URI registered in the Entra app (no wildcards).
 
 ```json
 {
@@ -175,7 +174,21 @@ tailscale funnel status   # prints the public *.ts.net URL
 Tailscale auto-issues and auto-renews the TLS cert for the `*.ts.net` URL;
 end users do not need to be on the Tailnet. Then register that exact URL as
 a redirect URI in the Entra app (Authentication → Platform configurations →
-Add a platform → **Web**).
+Add a platform → **Mobile and desktop applications** → enter it under
+**Custom redirect URIs**).
+
+> ⚠️ Register the callback under **Mobile and desktop applications**, **not
+> Web**. The plugin authenticates as a *public client* (PKCE, no client
+> secret). Entra decides public vs confidential by the redirect URI's
+> platform type: a **Web** redirect makes Entra treat the app as confidential
+> and demand a `client_secret`, so the token exchange fails with
+> **AADSTS7000218** ("request body must contain 'client_assertion' or
+> 'client_secret'"). A **Mobile and desktop applications** (Native) redirect
+> classifies the app as public — no secret needed. The "Allow public client
+> flows" toggle does **not** fix this: it is only consulted when the token
+> request carries no redirect URI (device-code / ROPC), so it never applies
+> to the auth-code flow. If you later move to a confidential client (with a
+> secret), the Web platform becomes the correct choice instead.
 
 Leave `oauthRedirectUri` unset to keep the device-code flow.
 
