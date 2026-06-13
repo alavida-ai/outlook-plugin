@@ -38,7 +38,7 @@ The plugin exposes four surfaces. Read the relevant reference file when you need
 ## Quick reference
 
 ```ts
-outlook_auth_login({})                                                       // start device-code login (returns URL + code)
+outlook_auth_login({})                                                       // start browser sign-in (returns authUrl; requires oauthRedirectUri)
 outlook_auth_status({})                                                      // verify auth state after the human signs in
 outlook_whoami({})                                                           // who am I authed as
 outlook_mail_list({ unread: true })                                          // unread inbox (>30 min old)

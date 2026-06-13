@@ -8,7 +8,15 @@ import type { AuthCodeUrlResult } from '@alavida-ai/outlook-core';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PendingFlow } from '../auth-callback.js';
-import { startBrowserFlow } from './auth-login.js';
+import authLogin, { startBrowserFlow } from './auth-login.js';
+
+describe('outlook_auth_login — browser-only (requires oauthRedirectUri)', () => {
+  it('throws a clear error when oauthRedirectUri is not configured', async () => {
+    await expect(
+      authLogin.execute({}, { agentId: 'alfred', agentDir: '/tmp/agent' }),
+    ).rejects.toThrow(/oauthRedirectUri/);
+  });
+});
 
 const URL_RESULT: AuthCodeUrlResult = {
   authUrl: 'https://login.microsoftonline.com/authorize?state=STATE-1',

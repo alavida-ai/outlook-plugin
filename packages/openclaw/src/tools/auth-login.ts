@@ -1,18 +1,15 @@
 /**
- * `auth_login` — start a login for this agent. Two flows, chosen by config:
+ * `auth_login` — start a browser (Authorization Code + PKCE) login for this agent.
  *
- *   - **Browser (Authorization Code + PKCE)** — when `oauthRedirectUri` is set
- *     in plugin config. Returns a sign-in URL immediately; the agent surfaces
- *     it to the human, who signs in via the browser. Microsoft redirects to the
- *     plugin's `/outlook/auth-callback` route, which redeems the code and writes
- *     tokens to this agent's cache. Required for tenants whose Conditional
- *     Access blocks device-code flow.
- *   - **Device code** — fallback when `oauthRedirectUri` is unset. Returns the
- *     verification URL + 6-character code; the plugin polls Microsoft in the
- *     background.
+ * Requires `oauthRedirectUri` in plugin config (the public HTTPS callback URL).
+ * Returns a sign-in URL immediately; the agent surfaces it to the human, who
+ * signs in via the browser. Microsoft redirects to the plugin's
+ * `/outlook/auth-callback` route, which redeems the code and writes tokens to
+ * this agent's cache. The agent then calls `auth_status` to confirm.
  *
- * Both are fire-and-forget: the agent surfaces what's returned, waits for the
- * human to confirm, then calls `auth_status` to verify the cached token.
+ * There is no device-code fallback: device-code is blocked by the Conditional
+ * Access baselines we target, and the CLI's localhost interactive flow can't
+ * run on a headless gateway — so the browser flow is the only gateway path.
  *
  * Multi-agent isolation: tokens land at `<agentDir>/outlook-tokens.json` by
  * default (see `client.ts:resolveCachePath`).
@@ -22,24 +19,12 @@ import {
   buildAuthCodeUrl,
   buildMsalApp,
   FileTokenCache,
-  loginDeviceCodeInBackground,
   type AuthCodeUrlResult,
 } from '@alavida-ai/outlook-core';
 
-import { resolveCachePath, type PluginConfig } from '../client.js';
+import { resolveCachePath } from '../client.js';
 import { registerPendingFlow, type PendingFlow } from '../auth-callback.js';
 import { defineTool } from '../register.js';
-
-interface DeviceAuthLoginResult {
-  status: 'pending';
-  flow: 'device';
-  verificationUrl: string;
-  userCode: string;
-  expiresAt: string;
-  agentId: string | null;
-  cachePath: string;
-  hint: string;
-}
 
 interface BrowserAuthLoginResult {
   status: 'pending';
@@ -50,8 +35,6 @@ interface BrowserAuthLoginResult {
   cachePath: string;
   hint: string;
 }
-
-type AuthLoginResult = DeviceAuthLoginResult | BrowserAuthLoginResult;
 
 interface StartBrowserFlowInput {
   urlResult: AuthCodeUrlResult;
@@ -98,77 +81,42 @@ export function startBrowserFlow(
   };
 }
 
-async function startDeviceFlow(
-  config: PluginConfig,
-  cachePath: string,
-): Promise<DeviceAuthLoginResult> {
-  const cache = new FileTokenCache(cachePath);
-  const app = buildMsalApp({
-    cache,
-    clientId: config.clientId,
-    tenantId: config.tenantId,
-  });
-
-  const result = await loginDeviceCodeInBackground({ app, cache });
-
-  // Fire-and-forget: drain the completion promise so failures don't surface
-  // as unhandled rejections. We never let them throw upstream — the agent
-  // discovers outcome via the next auth_status call.
-  void result.completion.then((outcome) => {
-    if (!outcome.ok) {
-      console.error(
-        `[outlook.auth_login] device-code completion failed for agent=${config.agentId ?? '<none>'}: ${outcome.reason}`,
-      );
-    }
-  });
-
-  return {
-    status: 'pending',
-    flow: 'device',
-    verificationUrl: result.verificationUrl,
-    userCode: result.userCode,
-    expiresAt: result.expiresAt,
-    agentId: config.agentId ?? null,
-    cachePath,
-    hint:
-      'Open the URL on any device, enter the code, sign in. Then call ' +
-      'outlook_auth_status to confirm.',
-  };
-}
-
 const authLogin = defineTool({
   name: 'outlook_auth_login',
   description:
-    'Start an OAuth login for this agent. With a browser redirect configured, ' +
-    'returns a sign-in URL; otherwise returns a device-code URL + six-character ' +
-    'code. Surface what is returned to the human and wait for them to confirm ' +
-    'sign-in, then call auth_status to verify.',
+    'Start a browser sign-in for this agent. Returns a Microsoft sign-in URL — ' +
+    'surface it to the human and wait for them to sign in, then call ' +
+    'auth_status to verify. Requires oauthRedirectUri in plugin config.',
   parameters: Type.Object({}),
-  async execute(_params, config): Promise<AuthLoginResult> {
-    const cachePath = resolveCachePath(config);
-
-    if (config.oauthRedirectUri) {
-      const cache = new FileTokenCache(cachePath);
-      const app = buildMsalApp({
-        cache,
-        clientId: config.clientId,
-        tenantId: config.tenantId,
-      });
-      const urlResult = await buildAuthCodeUrl({
-        app,
-        redirectUri: config.oauthRedirectUri,
-      });
-      return startBrowserFlow({
-        urlResult,
-        redirectUri: config.oauthRedirectUri,
-        cachePath,
-        agentId: config.agentId ?? null,
-        clientId: config.clientId,
-        tenantId: config.tenantId,
-      });
+  async execute(_params, config): Promise<BrowserAuthLoginResult> {
+    if (!config.oauthRedirectUri) {
+      throw new Error(
+        'outlook_auth_login requires `oauthRedirectUri` in the outlook plugin ' +
+          'config — the public HTTPS callback URL for the browser sign-in flow ' +
+          '(e.g. https://<gateway>.<tailnet>.ts.net/outlook/auth-callback). ' +
+          'See the outlook skill auth reference for setup.',
+      );
     }
 
-    return startDeviceFlow(config, cachePath);
+    const cachePath = resolveCachePath(config);
+    const cache = new FileTokenCache(cachePath);
+    const app = buildMsalApp({
+      cache,
+      clientId: config.clientId,
+      tenantId: config.tenantId,
+    });
+    const urlResult = await buildAuthCodeUrl({
+      app,
+      redirectUri: config.oauthRedirectUri,
+    });
+    return startBrowserFlow({
+      urlResult,
+      redirectUri: config.oauthRedirectUri,
+      cachePath,
+      agentId: config.agentId ?? null,
+      clientId: config.clientId,
+      tenantId: config.tenantId,
+    });
   },
 });
 

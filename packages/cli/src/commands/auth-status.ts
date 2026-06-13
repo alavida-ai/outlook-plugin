@@ -1,10 +1,10 @@
 import { parseArgs } from 'node:util';
 import { status } from '@alavida-ai/outlook-core';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
-const HELP = `Usage: outlook auth status [--account UPN] [--json]
+const HELP = `Usage: outlook auth status [--json]
 
 Print the cached account, or exit 1 if not logged in.
 `;
@@ -15,7 +15,6 @@ export async function run(argv: string[]): Promise<number> {
     parsed = parseArgs({
       args: argv,
       options: {
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -32,10 +31,9 @@ export async function run(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
-    const account = await status({ app: ctx.app, cache: ctx.cache, preferredUpn });
+    const account = await status({ app: ctx.app, cache: ctx.cache, preferredUpn: undefined });
     if (!account) {
       if (parsed.values.json) {
         printJson({ logged_in: false });

@@ -9,6 +9,7 @@ const HELP = `Usage: outlook auth login [--json]
 
 Sign in via the browser (Authorization Code + PKCE) and cache the tokens.
 
+  - Signing in REPLACES any currently cached account (the CLI is single-account).
   - Your default browser opens to the Microsoft sign-in page. If it can't be
     opened (e.g. over SSH), the URL is printed to STDERR — open it yourself.
   - MSAL listens on a localhost loopback for the redirect; nothing needs to be
@@ -67,6 +68,9 @@ export async function run(argv: string[]): Promise<number> {
   const ctx = makeContext();
 
   try {
+    // Single-account CLI: drop any previously cached account so the cache holds
+    // only the identity signing in now (no --account disambiguation needed).
+    await ctx.cache.clear();
     const result = await loginInteractive({
       app: ctx.app,
       cache: ctx.cache,

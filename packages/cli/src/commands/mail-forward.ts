@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 
 import { decodeEscapes } from '../escapes.js';
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook mail forward <message-id> --to ADDR [options]
@@ -13,7 +13,6 @@ Options:
       --cc ADDR        CC address. Repeatable.
       --comment TEXT   Optional note prepended above the quoted original.
                        Interprets \\n, \\r, \\t, \\\\ escapes.
-      --account UPN    Pick a specific cached account.
       --json           Emit JSON envelope instead of human summary.
 `;
 
@@ -26,7 +25,6 @@ export async function run(argv: string[]): Promise<number> {
         to: { type: 'string', multiple: true },
         cc: { type: 'string', multiple: true },
         comment: { type: 'string' },
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -59,8 +57,7 @@ export async function run(argv: string[]): Promise<number> {
   const comment =
     parsed.values.comment !== undefined ? decodeEscapes(parsed.values.comment) : undefined;
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const summary = await ctx.outlook.mail.forward(messageId, {
       to,

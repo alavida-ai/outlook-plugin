@@ -2,10 +2,10 @@ import { parseArgs } from 'node:util';
 
 import type { MailFolderSummary } from '@alavida-ai/outlook-core';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
-const HELP = `Usage: outlook mail folders [--account UPN] [--json]
+const HELP = `Usage: outlook mail folders [--json]
 
 List the signed-in user's mail folders with item counts.
 `;
@@ -16,7 +16,6 @@ export async function run(argv: string[]): Promise<number> {
     parsed = parseArgs({
       args: argv,
       options: {
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -33,8 +32,7 @@ export async function run(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const page = await ctx.outlook.mail.listFolders();
     if (parsed.values.json) {

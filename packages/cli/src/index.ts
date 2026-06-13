@@ -12,7 +12,7 @@ import { eprintln, formatError } from './output.js';
 const TOP_HELP = `Usage: outlook <command> [args...]
 
 Commands:
-  auth login                 Sign in via device-code flow.
+  auth login                 Sign in via the browser (Authorization Code + PKCE).
   auth logout                Clear cached tokens.
   auth status                Show the signed-in account, if any.
   whoami                     Print the signed-in user's profile.
@@ -31,13 +31,12 @@ Commands:
   calendar availability      Free/busy across one or more users.
 
 Global flags:
-  --account UPN      Pick a specific cached account (or set OUTLOOK_ACCOUNT).
   --json             Emit JSON to stdout instead of a human summary.
 
 Environment:
   AZURE_CLIENT_ID    Override the embedded Entra app id.
   AZURE_TENANT_ID    Override the default tenant ('common').
-  OUTLOOK_ACCOUNT    Default UPN to use when multiple accounts cached.
+  OUTLOOK_TOKEN_CACHE  Override the token cache path.
 
 Run \`outlook <command> --help\` for command-specific options.
 `;

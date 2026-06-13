@@ -89,7 +89,7 @@ const configJsonSchema: any = Type.Object({
   oauthRedirectUri: Type.Optional(
     Type.String({
       description:
-        'Public HTTPS redirect URI for the browser Authorization-Code (PKCE) sign-in flow, e.g. https://<gateway>.<tailnet>.ts.net/outlook/auth-callback. When set, outlook_auth_login returns a sign-in URL instead of a device code (required where Conditional Access blocks device-code flow). Must exactly match a redirect URI registered in the Entra app. Leave unset to keep the device-code flow.',
+        'Required. Public HTTPS redirect URI for the browser Authorization Code (PKCE) sign-in flow, e.g. https://<gateway>.<tailnet>.ts.net/outlook/auth-callback. outlook_auth_login builds the sign-in URL from it and refuses to run without it. Must exactly match a redirect URI registered under "Mobile and desktop applications" (public-client type) in the Entra app.',
     }),
   ),
 });

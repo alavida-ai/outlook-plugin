@@ -14,11 +14,11 @@ export interface PluginConfig {
   tokenCachePath?: string;
   account?: string;
   /**
-   * Public HTTPS redirect URI for the browser Authorization-Code flow. When
-   * set, `auth_login` returns a sign-in URL instead of a device code — required
-   * for tenants whose Conditional Access blocks device-code flow. Must exactly
-   * match a redirect URI registered in the Entra app. Leave unset to keep the
-   * device-code flow.
+   * Public HTTPS redirect URI for the browser Authorization Code (PKCE) flow.
+   * **Required**: `auth_login` builds the sign-in URL from it and refuses to run
+   * without it. Must exactly match a redirect URI registered under "Mobile and
+   * desktop applications" in the Entra app (public-client type — a "Web"
+   * redirect would force a client secret; see the skill auth reference).
    */
   oauthRedirectUri?: string;
   /**

@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 
 import type { EventSummary } from '@alavida-ai/outlook-core';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook calendar list [options]
@@ -16,7 +16,6 @@ Options:
       --after ISO      Window start (YYYY-MM-DD or full ISO 8601). Default: now.
       --before ISO     Window end. Default: now + --days days.
   -n, --limit N        Max events (default: 50).
-      --account UPN    Pick a specific cached account.
       --json           Emit JSON envelope instead of human summary.
 `;
 
@@ -30,7 +29,6 @@ export async function run(argv: string[]): Promise<number> {
         after: { type: 'string' },
         before: { type: 'string' },
         limit: { type: 'string', short: 'n' },
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -70,8 +68,7 @@ export async function run(argv: string[]): Promise<number> {
     before = new Date(nowMs + d * 86_400_000).toISOString();
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const page = await ctx.outlook.calendar.list({ limit, after, before });
     if (parsed.values.json) {

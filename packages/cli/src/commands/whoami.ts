@@ -1,9 +1,9 @@
 import { parseArgs } from 'node:util';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
-const HELP = `Usage: outlook whoami [--account UPN] [--json]
+const HELP = `Usage: outlook whoami [--json]
 
 Print the signed-in user's display name, email, job title, department,
 and office location.
@@ -15,7 +15,6 @@ export async function run(argv: string[]): Promise<number> {
     parsed = parseArgs({
       args: argv,
       options: {
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -32,8 +31,7 @@ export async function run(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const me = await ctx.outlook.me.get();
     if (parsed.values.json) {
