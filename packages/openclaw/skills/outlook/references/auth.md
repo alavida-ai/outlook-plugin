@@ -5,30 +5,22 @@ token cache per agent (at `<agentDir>/outlook-tokens.json`), so two agents
 on the same OpenClaw gateway can sign in as two different Microsoft users
 without crossing wires.
 
-## Two sign-in flows
+## The sign-in flow
 
-`outlook_auth_login` supports two flows. **The plugin picks automatically
-based on config** — the agent surface is the same either way:
+`outlook_auth_login` uses the **browser Authorization Code + PKCE** flow. It
+requires `oauthRedirectUri` in plugin config (see "Enabling the browser flow"
+below) — without it the tool returns an error telling the operator to set it.
+This is the only flow: device-code is blocked by the Conditional Access
+baselines we target ("Block Device Code Flow"), and the CLI's localhost
+interactive flow can't run on a headless gateway.
 
-| Flow | When it's used | What the agent surfaces |
-| --- | --- | --- |
-| **Browser (Authorization Code + PKCE)** | `oauthRedirectUri` is set in plugin config | A single sign-in `authUrl` |
-| **Device code** | `oauthRedirectUri` is unset | A `verificationUrl` + 6-character `userCode` |
-
-The **browser flow is the primary path** and is required for tenants whose
-Conditional Access blocks device-code flow (Microsoft's recommended
-"Block Device Code Flow" baseline). The **device-code flow is the fallback**
-for clients without that restriction and for local development.
-
-Both flows return **immediately** with `status: "pending"` — neither blocks
-for sign-in — and both finish the same way: the human signs in, tokens land
-in this agent's cache, and you confirm with `outlook_auth_status`.
+It returns **immediately** with `status: "pending"` — it does not block for
+sign-in. The human signs in, tokens land in this agent's cache, and you
+confirm with `outlook_auth_status`.
 
 ## Authenticating an agent (from inside the session)
 
-Call `outlook_auth_login` from the agent.
-
-**Browser flow** (when `oauthRedirectUri` is configured):
+Call `outlook_auth_login` from the agent:
 
 ```jsonc
 {
@@ -48,27 +40,8 @@ their browser to the plugin's `/outlook/auth-callback` route, which redeems
 the code and writes tokens to **this agent's** cache. The link is
 single-use and expires after 10 minutes.
 
-**Device-code flow** (when `oauthRedirectUri` is unset):
-
-```jsonc
-{
-  "status": "pending",
-  "flow": "device",
-  "verificationUrl": "https://microsoft.com/devicelogin",
-  "userCode": "ABCD1234",
-  "expiresAt": "2026-06-01T12:15:00Z",
-  "agentId": "alfred",
-  "cachePath": "/.../agents/alfred/agent/outlook-tokens.json",
-  "hint": "Open the URL on any device, enter the code, sign in. Then call outlook_auth_status to confirm."
-}
-```
-
-Surface `verificationUrl` and `userCode` to the human. The human signs in
-on any device (phone is fine), enters the code, and authorises sign-in.
-Polling Microsoft happens in the background.
-
-In **both** flows, once the human confirms sign-in is done, call
-`outlook_auth_status` to verify the token landed.
+Once the human confirms sign-in is done, call `outlook_auth_status` to verify
+the token landed:
 
 ```jsonc
 {
@@ -82,10 +55,10 @@ In **both** flows, once the human confirms sign-in is done, call
 
 If `auth_status` still returns `not_authenticated` after the human says
 sign-in is done, either the human hasn't actually completed the flow (ask
-them to try again — browser links expire after 10 min, device codes after
-~15 min) or Microsoft rejected the sign-in. The pending flow is single-use,
-so a fresh `outlook_auth_login` is needed for each attempt. Surface the
-failure and ask them to retry `outlook_auth_login`.
+them to try again — sign-in links expire after 10 min) or Microsoft rejected
+the sign-in. The pending flow is single-use, so a fresh `outlook_auth_login`
+is needed for each attempt. Surface the failure and ask them to retry
+`outlook_auth_login`.
 
 ## Logging out
 
@@ -146,10 +119,11 @@ accounts are cached and `account` is unset, tools throw
 
 ## Enabling the browser flow (operator config)
 
-Set `oauthRedirectUri` in plugin config to switch `outlook_auth_login` to
-the browser (Authorization Code + PKCE) flow. The value is the **public
-HTTPS callback URL** Microsoft will redirect to, and it must **exactly
-match** a redirect URI registered in the Entra app (no wildcards).
+`oauthRedirectUri` is **required** — set it in plugin config so
+`outlook_auth_login` can run the browser (Authorization Code + PKCE) flow.
+The value is the **public HTTPS callback URL** Microsoft will redirect to,
+and it must **exactly match** a redirect URI registered in the Entra app
+(no wildcards).
 
 ```json
 {
@@ -190,7 +164,7 @@ Add a platform → **Mobile and desktop applications** → enter it under
 > to the auth-code flow. If you later move to a confidential client (with a
 > secret), the Web platform becomes the correct choice instead.
 
-Leave `oauthRedirectUri` unset to keep the device-code flow.
+`oauthRedirectUri` is required — `outlook_auth_login` errors without it.
 
 ### Browser-flow security model
 
@@ -252,12 +226,29 @@ This is a deliberate posture: the CLI is for the human host operator
 
 ## Token storage
 
+`@alavida-ai/outlook-core` owns *how* tokens are stored but not *where*. It
+defines a `TokenCache` interface (`load` / `save` / `clear` / `lock`) and one
+file backend, `FileTokenCache`: a single JSON file written atomically
+(`tmp → fsync → rename`), `0600` file / `0700` dir, with a cross-process
+`O_EXCL` lock. The blob it stores is MSAL's opaque serialized cache — MSAL
+owns serialization; core owns persistence, atomicity, and locking.
+
+Each host decides the **path**:
+
+| Host | Path (highest precedence first) |
+| --- | --- |
+| **openclaw plugin** | `tokenCachePath` config → `OUTLOOK_TOKEN_CACHE` env → `<agentDir>/outlook-tokens.json` (per-agent) → `~/.outlook-plugin/tokens.json` |
+| **CLI** | `OUTLOOK_TOKEN_CACHE` env → `~/.outlook-plugin/tokens.json` |
+
+So the plugin scopes tokens **per agent** (`<agentDir>/…`) for isolation,
+while the CLI uses a single user-level file. Their fallback default is the
+same path; only `agentDir` pulls them apart on a real gateway.
+
 | Platform | Backend | Notes |
 | --- | --- | --- |
 | macOS | File (`0600`) | OS keychain support is future work |
 | Linux | File (`0600`) | OS keychain support is future work |
 | Windows | File (`0600`) | OS keychain support is future work |
 
-The cache file is `0600`, the parent directory is `0700`. Neither the CLI
-nor the plugin ever asks for or stores Microsoft passwords — only access +
-refresh tokens issued by Microsoft via OAuth.
+Neither the CLI nor the plugin ever asks for or stores Microsoft passwords —
+only access + refresh tokens issued by Microsoft via OAuth.

@@ -25,15 +25,7 @@ export { resolveAccount } from './auth/accounts.js';
 export { getAccessToken } from './auth/silent.js';
 export type { AccessTokenResult, GetAccessTokenInput } from './auth/silent.js';
 
-export { loginDeviceCode } from './auth/device-code.js';
-export type { LoginDeviceCodeInput, LoginResult } from './auth/device-code.js';
-
-export { loginDeviceCodeInBackground } from './auth/device-code-background.js';
-export type {
-  LoginDeviceCodeBackgroundInput,
-  BackgroundDeviceCodeResult,
-  BackgroundDeviceCodeCompletion,
-} from './auth/device-code-background.js';
+export type { LoginResult } from './auth/login-result.js';
 
 export {
   buildAuthCodeUrl,

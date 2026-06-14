@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 
 import { sanitiseAttachmentName } from '@alavida-ai/outlook-core';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook mail download-attachment <message-id> <attachment-id> [options]
@@ -14,7 +14,6 @@ directory using the attachment's (sanitised) name.
 
 Options:
   -o, --output PATH    File path to write to, OR a directory to write into.
-      --account UPN    Pick a specific cached account.
       --json           Emit JSON envelope describing the saved file.
 `;
 
@@ -25,7 +24,6 @@ export async function run(argv: string[]): Promise<number> {
       args: argv,
       options: {
         output: { type: 'string', short: 'o' },
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -49,8 +47,7 @@ export async function run(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const result = await ctx.outlook.mail.downloadAttachment(messageId, attachmentId);
     const target = await resolveOutputPath(parsed.values.output, result.name);

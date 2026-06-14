@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 
 import { decodeEscapes } from '../escapes.js';
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook mail draft --to ADDR --subject SUBJECT (--body BODY | --body-file PATH | --body -) [options]
@@ -17,7 +17,6 @@ Options:
       --body B         Body text. Interprets \\n, \\r, \\t, \\\\. Use '-' for stdin.
       --body-file PATH Read body from a file (no escape decoding).
       --html           Send body as HTML instead of plain text.
-      --account UPN    Pick a specific cached account.
       --json           Emit JSON envelope instead of human summary.
 `;
 
@@ -34,7 +33,6 @@ export async function run(argv: string[]): Promise<number> {
         body: { type: 'string' },
         'body-file': { type: 'string' },
         html: { type: 'boolean', default: false },
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -69,8 +67,7 @@ export async function run(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const summary = await ctx.outlook.mail.draft({
       subject: parsed.values.subject,

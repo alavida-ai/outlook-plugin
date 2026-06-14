@@ -37,7 +37,7 @@ Trigger when the user asks anything that touches their email or calendar **and**
 ## Quick reference
 
 ```bash
-outlook auth login                                            # device-code login
+outlook auth login                                            # browser sign-in (Authorization Code + PKCE)
 outlook auth status                                           # who am I authed as
 outlook whoami                                                # signed-in profile
 

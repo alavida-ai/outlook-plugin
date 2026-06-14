@@ -1,7 +1,7 @@
 import type { PublicClientApplication } from '@azure/msal-node';
 
 import type { TokenCache } from './cache.js';
-import type { LoginResult } from './device-code.js';
+import type { LoginResult } from './login-result.js';
 import { AuthRefreshFailedError } from './errors.js';
 import { OUTLOOK_SCOPES } from './msal.js';
 

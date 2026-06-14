@@ -6,7 +6,7 @@ import {
 } from '@azure/msal-node';
 
 import type { TokenCache } from './cache.js';
-import type { LoginResult } from './device-code.js';
+import type { LoginResult } from './login-result.js';
 import { AuthRefreshFailedError } from './errors.js';
 import { OUTLOOK_SCOPES } from './msal.js';
 
@@ -58,8 +58,8 @@ export interface AuthCodeUrlResult {
  * `authUrl` to the user and stashes `{ state, verifier, nonce, expiresAt }`
  * server-side until the browser redirect arrives.
  *
- * Unlike device-code, this does no network round-trip of its own — MSAL only
- * assembles a URL — so there is nothing to lock here.
+ * This does no network round-trip of its own — MSAL only assembles a URL —
+ * so there is nothing to lock here.
  */
 export async function buildAuthCodeUrl(
   input: BuildAuthCodeUrlInput,

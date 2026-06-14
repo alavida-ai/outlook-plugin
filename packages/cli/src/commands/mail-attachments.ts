@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 
 import type { AttachmentSummary } from '@alavida-ai/outlook-core';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook mail attachments <message-id> [options]
@@ -11,7 +11,6 @@ List attachment metadata on a message (id, name, size, content-type, inline?).
 Use \`outlook mail download-attachment\` to fetch the bytes.
 
 Options:
-      --account UPN    Pick a specific cached account.
       --json           Emit JSON envelope.
 `;
 
@@ -21,7 +20,6 @@ export async function run(argv: string[]): Promise<number> {
     parsed = parseArgs({
       args: argv,
       options: {
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -46,8 +44,7 @@ export async function run(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const page = await ctx.outlook.mail.listAttachments(messageId);
     if (parsed.values.json) {

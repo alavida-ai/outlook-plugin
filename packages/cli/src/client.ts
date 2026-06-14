@@ -17,15 +17,7 @@ type MsalApp = ReturnType<typeof buildMsalApp>;
 export interface CliContext {
   app: MsalApp;
   cache: TokenCache;
-  preferredUpn: string | undefined;
   outlook: OutlookClient;
-}
-
-/** Resolve the preferred UPN: --account flag wins, then OUTLOOK_ACCOUNT env. */
-export function resolveUpn(accountFlag: string | undefined): string | undefined {
-  if (accountFlag) return accountFlag;
-  const env = process.env.OUTLOOK_ACCOUNT;
-  return env ? env : undefined;
 }
 
 /** Resolve the default token-cache path: $OUTLOOK_TOKEN_CACHE > ~/.outlook-plugin/tokens.json */
@@ -34,7 +26,6 @@ export function defaultCachePath(): string {
 }
 
 export interface MakeContextOptions {
-  preferredUpn?: string;
   cachePath?: string;
   clientId?: string;
   tenantId?: string;
@@ -53,7 +44,8 @@ export function makeContext(opts: MakeContextOptions = {}): CliContext {
     clientId: opts.clientId ?? process.env.AZURE_CLIENT_ID,
     tenantId: opts.tenantId ?? process.env.AZURE_TENANT_ID,
   });
-  const preferredUpn = opts.preferredUpn;
-  const graph = makeGraphClient({ app, cache, preferredUpn });
-  return { app, cache, preferredUpn, outlook: new OutlookClient(graph) };
+  // The CLI is single-account (sign-in replaces the cached account), so it
+  // never pins a preferred UPN — core resolves the one cached account.
+  const graph = makeGraphClient({ app, cache, preferredUpn: undefined });
+  return { app, cache, outlook: new OutlookClient(graph) };
 }

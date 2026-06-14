@@ -7,7 +7,7 @@ import {
   type AvailabilityScheduleSummary,
 } from '@alavida-ai/outlook-core';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook calendar availability --emails ADDR [--emails ADDR ...] [options]
@@ -32,7 +32,6 @@ Output:
 
 Other:
       --emails ADDR    Email to check. Repeatable.
-      --account UPN    Pick a specific cached account.
       --json           Emit full JSON envelope.
 `;
 
@@ -50,7 +49,6 @@ export async function run(argv: string[]): Promise<number> {
         past: { type: 'boolean', default: false },
         'free-slots': { type: 'string' },
         raw: { type: 'boolean', default: false },
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -103,8 +101,7 @@ export async function run(argv: string[]): Promise<number> {
   const tz = parsed.values.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const direction: 'asc' | 'desc' = parsed.values.past ? 'desc' : 'asc';
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const result = await ctx.outlook.calendar.availability({
       emails,

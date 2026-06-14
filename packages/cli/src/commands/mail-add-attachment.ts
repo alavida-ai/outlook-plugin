@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { makeContext, resolveUpn } from '../client.js';
+import { makeContext } from '../client.js';
 import { eprintln, formatError, printJson, println } from '../output.js';
 
 const HELP = `Usage: outlook mail add-attachment <draft-id> --file PATH [options]
@@ -14,7 +14,6 @@ Options:
       --name NAME       Override the displayed filename (default: file basename).
       --content-type T  Override the MIME type (default: guessed from extension).
       --inline          Mark the attachment as inline (default: false).
-      --account UPN     Pick a specific cached account.
       --json            Emit JSON envelope instead of human summary.
 
 Files are uploaded inline; the cap is 3 MB. Larger uploads require Graph's
@@ -62,7 +61,6 @@ export async function run(argv: string[]): Promise<number> {
         name: { type: 'string' },
         'content-type': { type: 'string' },
         inline: { type: 'boolean', default: false },
-        account: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false, short: 'h' },
       },
@@ -102,8 +100,7 @@ export async function run(argv: string[]): Promise<number> {
   const displayName = parsed.values.name ?? basename(parsed.values.file);
   const contentType = parsed.values['content-type'] ?? guessContentType(displayName);
 
-  const preferredUpn = resolveUpn(parsed.values.account);
-  const ctx = makeContext({ preferredUpn });
+  const ctx = makeContext();
   try {
     const summary = await ctx.outlook.mail.addAttachment(draftId, {
       name: displayName,

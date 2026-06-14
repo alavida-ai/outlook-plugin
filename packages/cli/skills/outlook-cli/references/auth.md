@@ -44,23 +44,9 @@ outlook auth logout
 
 Clears the cached tokens. Next command that hits Graph will fail until you log back in.
 
-## Switching accounts
+## One account at a time
 
-The CLI supports multiple cached accounts. Pin a specific account per-call with `--account`:
-
-```bash
-outlook --account alice@example.com mail list
-outlook --account bob@other.com mail list
-```
-
-Or set a default for the shell session:
-
-```bash
-export OUTLOOK_ACCOUNT=alice@example.com
-outlook mail list   # uses alice
-```
-
-If there are multiple cached accounts and neither flag nor env var is set, every command will fail with `auth_ambiguous_account` listing the available UPNs.
+The CLI is single-account: `outlook auth login` **replaces** whoever was signed in (it clears the cache before signing in), so you never juggle accounts or pass a `--account` flag. To switch identities, just run `outlook auth login` again and sign in as the other user.
 
 ## Re-auth triggers (uncommon)
 
@@ -82,7 +68,7 @@ When any of these fires, the next command will emit a clear "next step" hint poi
 | `auth_cache_missing` on a fresh install | `outlook auth login` |
 | `auth_cache_corrupt` after upgrade | `outlook auth logout && outlook auth login` |
 | `auth_refresh_failed` after password change or scope change | `outlook auth login` |
-| `auth_ambiguous_account` | Pin `--account UPN` or `export OUTLOOK_ACCOUNT=...` |
+| `auth_ambiguous_account` (a pre-existing cache holds >1 account) | `outlook auth login` — it clears the cache and signs in as one account |
 | `auth_lock_timeout` (another process holds the refresh lock) | Wait a few seconds and retry; if persistent, `outlook auth logout && outlook auth login` |
 
 ## Where the cache lives

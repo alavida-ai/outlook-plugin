@@ -96,8 +96,8 @@ export class FileTokenCache implements TokenCache {
 
     // Ensure parent dir exists before O_EXCL create. Otherwise the first-ever
     // lock attempt on a fresh install fails with ENOENT (the parent dir is
-    // normally created by save(), but loginDeviceCode acquires the lock
-    // BEFORE the cache plugin's afterCacheAccess fires).
+    // normally created by save(), but a sign-in acquires the lock BEFORE the
+    // cache plugin's afterCacheAccess fires).
     //
     // Synchronous mkdir so the function doesn't yield to the event loop
     // before the openSync — keeps the "first caller wins openSync" property
