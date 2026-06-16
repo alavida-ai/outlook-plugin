@@ -19,6 +19,7 @@ import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import type { PluginConfig } from './client.js';
 import { readPluginConfig, registerTool, type ToolDescriptor } from './register.js';
 import { AUTH_CALLBACK_PATH, makeAuthCallbackHandler } from './auth-callback.js';
+import { makeAuthMessageHook } from './auth-message.js';
 
 import authLogin from './tools/auth-login.js';
 import authStatus from './tools/auth-status.js';
@@ -114,6 +115,11 @@ export default definePluginEntry({
       match: 'exact',
       handler: makeAuthCallbackHandler(),
     });
+    // Deliver the sign-in URL out-of-band: auth_login stashes it keyed by
+    // session, and this hook rewrites the agent's next outbound reply in that
+    // session to carry the verbatim link — so a prompt-injected agent never
+    // holds the URL and can't swap in a phishing link.
+    api.on('message_sending', makeAuthMessageHook());
   },
 });
 
