@@ -24,12 +24,21 @@ import {
 
 import { resolveCachePath } from '../client.js';
 import { registerPendingFlow, type PendingFlow } from '../auth-callback.js';
+import { AUTH_MESSAGE_TTL_MS, stashAuthMessage } from '../auth-message.js';
 import { defineTool } from '../register.js';
 
 interface BrowserAuthLoginResult {
   status: 'pending';
   flow: 'browser';
-  authUrl: string;
+  /**
+   * `channel` — the URL was sent to the user out-of-band (via the
+   * message_sending hook) and is deliberately absent from this envelope so the
+   * agent can't alter it. `inline` — no session context, so the URL is returned
+   * here as a fallback (the hook can't deliver it).
+   */
+  delivery: 'channel' | 'inline';
+  /** Present only when `delivery === 'inline'`. */
+  authUrl?: string;
   expiresAt: string;
   agentId: string | null;
   cachePath: string;
@@ -41,22 +50,30 @@ interface StartBrowserFlowInput {
   redirectUri: string;
   cachePath: string;
   agentId: string | null;
+  /** The conversation/session the link must be delivered to; null if unknown. */
+  sessionKey: string | null;
   clientId?: string;
   tenantId?: string;
 }
 
 /**
  * Register the server-side pending flow for a minted auth URL and build the
- * agent-facing envelope. The PKCE verifier and nonce stay in the pending-flows
- * map — only the opaque `authUrl` is ever returned to the agent.
+ * agent-facing envelope.
  *
- * Pure (modulo the injected `register`) so it can be tested without MSAL.
+ * Security: when a `sessionKey` is present, the URL is **stashed** for the
+ * message_sending hook to deliver to the user directly, and is kept entirely
+ * out of the returned envelope — a prompt-injected agent never sees it and so
+ * can't swap in a phishing link. Without a session (no channel to deliver to),
+ * we fall back to returning the URL inline so sign-in still works.
+ *
+ * Pure (modulo the injected `register`/`stash`) so it can be tested without MSAL.
  */
 export function startBrowserFlow(
   input: StartBrowserFlowInput,
   register: (flow: PendingFlow) => void = registerPendingFlow,
+  stash: (sessionKey: string, url: string, expiresAt: number) => void = stashAuthMessage,
 ): BrowserAuthLoginResult {
-  const { urlResult, redirectUri, cachePath, agentId, clientId, tenantId } = input;
+  const { urlResult, redirectUri, cachePath, agentId, sessionKey, clientId, tenantId } = input;
   register({
     state: urlResult.state,
     verifier: urlResult.verifier,
@@ -68,16 +85,33 @@ export function startBrowserFlow(
     tenantId,
     expiresAt: new Date(urlResult.expiresAt).getTime(),
   });
+
+  if (sessionKey) {
+    stash(sessionKey, urlResult.authUrl, Date.now() + AUTH_MESSAGE_TTL_MS);
+    return {
+      status: 'pending',
+      flow: 'browser',
+      delivery: 'channel',
+      expiresAt: urlResult.expiresAt,
+      agentId,
+      cachePath,
+      hint:
+        'The sign-in link has been sent to the user in this channel. Ask them ' +
+        'to confirm once they have signed in, then call outlook_auth_status to verify.',
+    };
+  }
+
   return {
     status: 'pending',
     flow: 'browser',
+    delivery: 'inline',
     authUrl: urlResult.authUrl,
     expiresAt: urlResult.expiresAt,
     agentId,
     cachePath,
     hint:
-      'Open the URL in a browser and sign in. Then call outlook_auth_status ' +
-      'to confirm.',
+      'Surface this URL to the human and wait for sign-in. Then call ' +
+      'outlook_auth_status to confirm.',
   };
 }
 
@@ -114,6 +148,7 @@ const authLogin = defineTool({
       redirectUri: config.oauthRedirectUri,
       cachePath,
       agentId: config.agentId ?? null,
+      sessionKey: config.sessionKey ?? null,
       clientId: config.clientId,
       tenantId: config.tenantId,
     });

@@ -170,6 +170,7 @@ export function registerTool<TParameters extends TSchema>(
         ...getConfig(),
         agentId: ctx.agentId,
         agentDir: ctx.agentDir,
+        sessionKey: ctx.sessionKey,
       };
       const result = await withErrorMapping(descriptor.name, () =>
         descriptor.execute(meta.toolParams as Static<TParameters>, config),

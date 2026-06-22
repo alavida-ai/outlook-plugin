@@ -16,16 +16,21 @@ import { AUTH_CALLBACK_PATH } from './auth-callback.js';
 function captureRoutes(): {
   api: OpenClawPluginApi;
   routes: OpenClawPluginHttpRouteParams[];
+  hooks: Array<{ name: string; handler: unknown }>;
 } {
   const routes: OpenClawPluginHttpRouteParams[] = [];
+  const hooks: Array<{ name: string; handler: unknown }> = [];
   const api = {
     pluginConfig: {},
     registerTool() {},
     registerHttpRoute(params: OpenClawPluginHttpRouteParams) {
       routes.push(params);
     },
+    on(name: string, handler: unknown) {
+      hooks.push({ name, handler });
+    },
   } as unknown as OpenClawPluginApi;
-  return { api, routes };
+  return { api, routes, hooks };
 }
 
 describe('outlook plugin entry — auth-callback route', () => {
@@ -44,5 +49,15 @@ describe('outlook plugin entry — auth-callback route', () => {
     expect(route?.auth).toBe('plugin');
     expect(route?.match).toBe('exact');
     expect(typeof route?.handler).toBe('function');
+  });
+});
+
+describe('outlook plugin entry — auth-message hook', () => {
+  it('registers a message_sending hook to deliver the sign-in URL out-of-band', () => {
+    const { api, hooks } = captureRoutes();
+    outlookPlugin.register(api);
+    const hook = hooks.find((h) => h.name === 'message_sending');
+    expect(hook).toBeDefined();
+    expect(typeof hook?.handler).toBe('function');
   });
 });

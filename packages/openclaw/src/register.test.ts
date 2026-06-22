@@ -118,6 +118,21 @@ describe('registerTool — factory shape + per-agent context capture', () => {
     });
   });
 
+  it('bakes ctx.sessionKey into the per-execute config (for out-of-band URL delivery)', async () => {
+    const { api, lastFactory } = makeFakeApi();
+    const captured: PluginConfig[] = [];
+    const descriptor = makeDescriptor((cfg) => captured.push(cfg));
+    registerTool(api, descriptor, () => ({}) as PluginConfig);
+
+    await callExecute(lastFactory(), {
+      toolName: 'test_tool',
+      agentId: 'alfred',
+      sessionKey: 'sess-abc',
+    });
+
+    expect(captured[0].sessionKey).toBe('sess-abc');
+  });
+
   it('two factory calls for different agents produce independent execute configs', async () => {
     const { api, lastFactory } = makeFakeApi();
     const captured: PluginConfig[] = [];

@@ -26,19 +26,26 @@ Call `outlook_auth_login` from the agent:
 {
   "status": "pending",
   "flow": "browser",
-  "authUrl": "https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize?...",
+  "delivery": "channel",
   "expiresAt": "2026-06-01T12:10:00Z",
   "agentId": "alfred",
   "cachePath": "/.../agents/alfred/agent/outlook-tokens.json",
-  "hint": "Open the URL in a browser and sign in. Then call outlook_auth_status to confirm."
+  "hint": "The sign-in link has been sent to the user in this channel. Ask them to confirm once they have signed in, then call outlook_auth_status to verify."
 }
 ```
 
-Surface `authUrl` to the human. They open it in any browser, sign in
-(subject to the tenant's MFA / Conditional Access), and Microsoft redirects
-their browser to the plugin's `/outlook/auth-callback` route, which redeems
-the code and writes tokens to **this agent's** cache. The link is
-single-use and expires after 10 minutes.
+**The sign-in URL is deliberately NOT in this result.** The plugin delivers
+it directly to the user as a separate message in this channel (the agent never
+sees the URL — a security measure so a prompt-injected agent can't substitute a
+phishing link). Your job is simply to **ask the human to sign in via the link
+that was just sent, and to tell you when they're done**. The user opens it,
+signs in (subject to the tenant's MFA / Conditional Access), and Microsoft
+redirects to the plugin's `/outlook/auth-callback` route, which redeems the code
+and writes tokens to **this agent's** cache. The link is single-use and expires
+after 10 minutes.
+
+> `delivery: "inline"` (with an `authUrl` field) only appears when there is no
+> channel session to deliver to — then you surface the URL yourself.
 
 Once the human confirms sign-in is done, call `outlook_auth_status` to verify
 the token landed:

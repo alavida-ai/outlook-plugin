@@ -32,6 +32,12 @@ export interface PluginConfig {
    * the token cache lives at `<agentDir>/outlook-tokens.json`.
    */
   agentDir?: string;
+  /**
+   * Set by the OpenClaw plugin SDK via the tool-factory context. Identifies the
+   * conversation so `auth_login` can stash the sign-in URL for the
+   * message_sending hook to deliver to the right session.
+   */
+  sessionKey?: string;
 }
 
 /**
