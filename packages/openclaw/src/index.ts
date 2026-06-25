@@ -14,7 +14,10 @@
  * land in subsequent plan files.
  */
 import { Type } from 'typebox';
-import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
+import {
+  definePluginEntry,
+  type OpenClawPluginDefinition,
+} from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { PluginConfig } from './client.js';
 import { readPluginConfig, registerTool, type ToolDescriptor } from './register.js';
@@ -95,7 +98,10 @@ const configJsonSchema: any = Type.Object({
   ),
 });
 
-export default definePluginEntry({
+// Annotate the export with the public `OpenClawPluginDefinition` type. Without
+// it, tsc infers the SDK-internal `DefinedPluginEntry` return type, which lives
+// in a hash-named SDK file it can't name portably in the emitted .d.ts (TS2742).
+const outlookPlugin: OpenClawPluginDefinition = definePluginEntry({
   id: 'outlook',
   name: 'outlook',
   description:
@@ -122,6 +128,8 @@ export default definePluginEntry({
     api.on('message_sending', makeAuthMessageHook());
   },
 });
+
+export default outlookPlugin;
 
 export { getClient, _resetClientForTesting } from './client.js';
 export type { PluginConfig };
