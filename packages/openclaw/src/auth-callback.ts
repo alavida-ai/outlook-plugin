@@ -211,9 +211,9 @@ export function makeAuthCallbackHandler(
 
     // 6. Redeem the code for tokens (per-agent cache write happens inside).
     try {
-      const { upn } = await withTimeout(exchange(flow, code), AUTH_CALLBACK_TIMEOUT_MS);
+      await withTimeout(exchange(flow, code), AUTH_CALLBACK_TIMEOUT_MS);
       console.error(
-        `[outlook.auth-callback] sign-in complete for agent=${flow.agentId ?? '<none>'} upn=${upn}`,
+        `[outlook.auth-callback] sign-in complete for agent=${flow.agentId ?? '<none>'}`,
       );
       return htmlResponse(
         res,
