@@ -30,19 +30,23 @@ Call `outlook_auth_login` from the agent:
   "expiresAt": "2026-06-01T12:10:00Z",
   "agentId": "alfred",
   "cachePath": "/.../agents/alfred/agent/outlook-tokens.json",
-  "hint": "The sign-in link has been sent to the user in this channel. Ask them to confirm once they have signed in, then call outlook_auth_status to verify."
+  "hint": "The sign-in link is ready but NOT delivered yet. To deliver it, call the `message` tool now to send the user a short note (e.g. \"Sending your Microsoft sign-in link\"). The secure link is automatically attached to that outgoing `message` — you do not have the URL yourself, so calling `message` is what delivers it. After the user confirms they have signed in, call outlook_auth_status to verify."
 }
 ```
 
-**The sign-in URL is deliberately NOT in this result.** The plugin delivers
-it directly to the user as a separate message in this channel (the agent never
-sees the URL — a security measure so a prompt-injected agent can't substitute a
-phishing link). Your job is simply to **ask the human to sign in via the link
-that was just sent, and to tell you when they're done**. The user opens it,
-signs in (subject to the tenant's MFA / Conditional Access), and Microsoft
-redirects to the plugin's `/outlook/auth-callback` route, which redeems the code
-and writes tokens to **this agent's** cache. The link is single-use and expires
-after 10 minutes.
+**The sign-in URL is deliberately NOT in this result.** The agent never sees the
+URL — a security measure so a prompt-injected agent can't substitute a phishing
+link. Instead, the URL is stashed server-side, and **you must call the `message`
+tool to deliver it**: send a short message in this session (e.g. "Sending your
+Microsoft sign-in link") and the `message_sending` hook rewrites that outgoing
+message to carry the verbatim link. The link is **not** delivered until you call
+`message` — if you end your turn without doing so, the user never receives it.
+
+After you call `message`, ask the human to **sign in via the link they now have,
+and to tell you when they're done**. The user opens it, signs in (subject to the
+tenant's MFA / Conditional Access), and Microsoft redirects to the plugin's
+`/outlook/auth-callback` route, which redeems the code and writes tokens to
+**this agent's** cache. The link is single-use and expires after 10 minutes.
 
 > `delivery: "inline"` (with an `authUrl` field) only appears when there is no
 > channel session to deliver to — then you surface the URL yourself.

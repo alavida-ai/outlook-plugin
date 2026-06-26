@@ -31,10 +31,11 @@ interface BrowserAuthLoginResult {
   status: 'pending';
   flow: 'browser';
   /**
-   * `channel` — the URL was sent to the user out-of-band (via the
-   * message_sending hook) and is deliberately absent from this envelope so the
-   * agent can't alter it. `inline` — no session context, so the URL is returned
-   * here as a fallback (the hook can't deliver it).
+   * `channel` — the URL is stashed for out-of-band delivery and is deliberately
+   * absent from this envelope so the agent can't alter it. The agent must call
+   * the `message` tool to send a message in this session; the `message_sending`
+   * hook rewrites that outgoing message to carry the link. `inline` — no session
+   * context, so the URL is returned here as a fallback (the hook can't deliver it).
    */
   delivery: 'channel' | 'inline';
   /** Present only when `delivery === 'inline'`. */
@@ -61,10 +62,11 @@ interface StartBrowserFlowInput {
  * agent-facing envelope.
  *
  * Security: when a `sessionKey` is present, the URL is **stashed** for the
- * message_sending hook to deliver to the user directly, and is kept entirely
- * out of the returned envelope — a prompt-injected agent never sees it and so
- * can't swap in a phishing link. Without a session (no channel to deliver to),
- * we fall back to returning the URL inline so sign-in still works.
+ * message_sending hook to attach to the agent's next `message` call, and is kept
+ * entirely out of the returned envelope — a prompt-injected agent never sees it
+ * and so can't swap in a phishing link. The hint instructs the agent to call the
+ * `message` tool, which is what triggers delivery. Without a session (no channel
+ * to deliver to), we fall back to returning the URL inline so sign-in still works.
  *
  * Pure (modulo the injected `register`/`stash`) so it can be tested without MSAL.
  */
@@ -96,8 +98,12 @@ export function startBrowserFlow(
       agentId,
       cachePath,
       hint:
-        'The sign-in link has been sent to the user in this channel. Ask them ' +
-        'to confirm once they have signed in, then call outlook_auth_status to verify.',
+        'The sign-in link is ready but NOT delivered yet. To deliver it, call the ' +
+        '`message` tool now to send the user a short note (e.g. "Sending your ' +
+        'Microsoft sign-in link"). The secure link is automatically attached to that ' +
+        'outgoing `message` — you do not have the URL yourself, so calling `message` ' +
+        'is what delivers it. After the user confirms they have signed in, call ' +
+        'outlook_auth_status to verify.',
     };
   }
 
