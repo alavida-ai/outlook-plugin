@@ -58,6 +58,9 @@ describe('startBrowserFlow — with a session (out-of-band delivery)', () => {
     expect(result.delivery).toBe('channel');
     expect(result.authUrl).toBeUndefined();
     expect(result.hint).toMatch(/auth_status/);
+    // Hint must tell the agent to call the `message` tool — that outgoing message
+    // is what the message_sending hook rewrites to carry the link.
+    expect(result.hint).toMatch(/message/);
     // The URL never appears anywhere the agent can see.
     expect(JSON.stringify(result)).not.toContain('login.microsoftonline.com');
   });
