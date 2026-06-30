@@ -17,6 +17,7 @@ import {
   clearAuthMessages,
   gcExpiredAuthMessages,
   makeAuthMessageHook,
+  renderAuthMessage,
 } from './auth-message.js';
 
 const URL = 'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?x=1';
@@ -93,5 +94,43 @@ describe('makeAuthMessageHook — message_sending rewrite', () => {
     const hook = makeAuthMessageHook();
     stashAuthMessage('sess-1', URL, Date.now() - 1);
     expect(hook(event, ctx('sess-1'))).toBeUndefined();
+  });
+
+  it('passes the channelId through to rendering (telegram → Markdown link)', () => {
+    const hook = makeAuthMessageHook();
+    stashAuthMessage('sess-1', URL, Date.now() + AUTH_MESSAGE_TTL_MS);
+    const result = hook(event, { channelId: 'telegram', sessionKey: 'sess-1' });
+    expect(result!.content).toContain(`[Sign in to Microsoft Outlook](${URL})`);
+  });
+});
+
+describe('renderAuthMessage — channel-aware link form', () => {
+  // A realistic auth URL: the scope %20 is what bare-URL channels mangle.
+  const AUTH_URL =
+    'https://login.microsoftonline.com/t/oauth2/v2.0/authorize?scope=Mail.ReadWrite%20User.Read&x=1';
+
+  it('wraps the URL in a Markdown link for Markdown channels (telegram)', () => {
+    const msg = renderAuthMessage(AUTH_URL, 'telegram');
+    expect(msg).toContain(`[Sign in to Microsoft Outlook](${AUTH_URL})`);
+    // %20 is preserved inside the link destination.
+    expect(msg).toContain('Mail.ReadWrite%20User.Read');
+  });
+
+  it('sends a bare URL for WhatsApp (no Markdown link markup)', () => {
+    const msg = renderAuthMessage(AUTH_URL, 'whatsapp');
+    expect(msg).toContain(AUTH_URL);
+    // No Markdown link wrapping — WhatsApp would render the brackets literally.
+    expect(msg).not.toContain('](');
+    expect(msg).toContain('Mail.ReadWrite%20User.Read');
+  });
+
+  it('case-insensitive channel matching', () => {
+    expect(renderAuthMessage(AUTH_URL, 'WhatsApp')).not.toContain('](');
+  });
+
+  it('defaults to a Markdown link when the channel is unknown/undefined', () => {
+    // Fails safe: an unknown Markdown channel gets a preserved link; a non-Markdown
+    // one shows literal brackets but the URL stays intact and copyable.
+    expect(renderAuthMessage(AUTH_URL)).toContain(`[Sign in to Microsoft Outlook](${AUTH_URL})`);
   });
 });
