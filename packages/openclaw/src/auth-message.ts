@@ -66,11 +66,34 @@ export function gcExpiredAuthMessages(now: number = Date.now()): void {
   }
 }
 
+/**
+ * Channels that auto-link a **bare** URL and do NOT mangle it, so we send the
+ * raw URL. WhatsApp/SMS/iMessage have no inline-link markup (a Markdown link
+ * would render as literal `[text](url)`), and they don't percent-decode the
+ * query string. Discord renders Markdown but `[text](url)` only links inside
+ * embeds, not plain messages, so a bare URL is also right there.
+ */
+const BARE_URL_CHANNELS = new Set(['whatsapp', 'sms', 'imessage', 'discord']);
+
+/**
+ * Render the sign-in link for a given channel. The Microsoft auth URL carries a
+ * space-delimited `scope` encoded as `%20`; Markdown-rendering channels (e.g.
+ * Telegram, Slack) prettify a **bare** URL and decode that `%20` to a space,
+ * which breaks the link. For those channels we wrap the URL in a Markdown link
+ * so the URL lives in the link **destination**, which the renderer preserves
+ * verbatim. For bare-URL channels (see {@link BARE_URL_CHANNELS}) we send the
+ * raw URL, which they auto-link without touching the encoding.
+ */
+function renderSignInLink(url: string, channelId?: string): string {
+  if (BARE_URL_CHANNELS.has((channelId ?? '').toLowerCase())) return url;
+  return `[Sign in to Microsoft Outlook](${url})`;
+}
+
 /** Render the canonical, self-contained sign-in message delivered to the user. */
-export function renderAuthMessage(url: string): string {
+export function renderAuthMessage(url: string, channelId?: string): string {
   return (
     'Click the link below to sign in to Microsoft Outlook:\n\n' +
-    `${url}\n\n` +
+    `${renderSignInLink(url, channelId)}\n\n` +
     "Once you've signed in, let me know and I'll confirm the connection."
   );
 }
@@ -84,6 +107,7 @@ interface MessageSendingEvent {
 }
 interface MessageHookContext {
   sessionKey?: string;
+  channelId?: string;
 }
 interface MessageSendingResult {
   content?: string;
@@ -105,6 +129,6 @@ export function makeAuthMessageHook(now: () => number = () => Date.now()): AuthM
     if (!ctx.sessionKey) return;
     const url = takeAuthMessage(ctx.sessionKey, now());
     if (!url) return;
-    return { content: renderAuthMessage(url) };
+    return { content: renderAuthMessage(url, ctx.channelId) };
   };
 }
